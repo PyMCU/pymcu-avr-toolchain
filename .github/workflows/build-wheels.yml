@@ -184,58 +184,45 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # macOS arm64 (Apple Silicon) — built from source natively on macos-latest.
-  # avr-gcc-build.sh runs with FOR_LINUX=1 (native host build); on macOS this
-  # produces a macOS arm64 binary. The output dir is renamed to macos-staged/.
-  # Build time: ~75 min cold; cached on hashFiles('avr-gcc-build.sh') so
-  # subsequent runs triggered by the same script version are instant.
+  # macOS arm64 — extract from Homebrew + bundle dylibs for portability.
+  # avr-gcc-build.sh does not support macOS (designed for Linux/MinGW only).
+  # Homebrew provides avr-gcc and avr-binutils as native arm64 packages.
+  # scripts/bundle-macos-toolchain.sh assembles the staged directory and
+  # rewrites all dylib references from absolute Homebrew paths to @rpath so
+  # the wheel works without Homebrew installed on the target machine.
+  # Cache keyed on avr-gcc formula version; re-runs when Homebrew updates it.
   # ---------------------------------------------------------------------------
   build-macos-arm64:
-    name: Build macOS arm64 toolchain (native)
+    name: Build macOS arm64 toolchain (Homebrew)
     runs-on: macos-latest
-    timeout-minutes: 120
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
+
+      - name: Query avr-gcc Homebrew formula version
+        id: avrgcc-ver
+        run: |
+          VER=$(brew info --json avr-gcc | python3 -c \
+            'import sys,json; d=json.load(sys.stdin)[0]; print(d["versions"]["stable"])')
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
+          echo "avr-gcc formula version: $VER"
 
       - name: Restore toolchain cache
         id: toolchain-cache
         uses: actions/cache@v4
         with:
           path: macos-arm64-toolchain-staged/
-          key: toolchain-macos-arm64-v2-${{ hashFiles('avr-gcc-build.sh') }}
+          key: toolchain-macos-arm64-hb-${{ steps.avrgcc-ver.outputs.ver }}
 
-      - name: Install build dependencies
+      - name: Install AVR toolchain via Homebrew
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        run: |
-          brew install automake texinfo wget gmp mpfr libmpc bison flex
-          # bison, flex, and texinfo are keg-only — add to PATH before the build step
-          echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
-          echo "$(brew --prefix flex)/bin" >> $GITHUB_PATH
-          echo "$(brew --prefix texinfo)/bin" >> $GITHUB_PATH
+        run: brew install avr-gcc avr-binutils
 
-      - name: Set GCC dependency paths
+      - name: Assemble and bundle toolchain
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        run: |
-          PREFIX=$(brew --prefix)
-          echo "CPPFLAGS=-I$PREFIX/include" >> $GITHUB_ENV
-          echo "LDFLAGS=-L$PREFIX/lib" >> $GITHUB_ENV
-
-      - name: Build AVR-GCC toolchain
-        if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        env:
-          FOR_LINUX: "1"
-          FOR_WINX64: "0"
-          FOR_WINX86: "0"
-          JOBCOUNT: "4"
-        run: bash avr-gcc-build.sh
-
-      - name: Stage toolchain
-        if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        run: |
-          DIR=$(ls -d build/avr-gcc-*-x64-linux | head -1)
-          cp -r "$DIR" macos-arm64-toolchain-staged
+        run: bash scripts/bundle-macos-toolchain.sh "$(brew --prefix)" macos-arm64-toolchain-staged
 
       - name: Verify toolchain
         run: |
@@ -250,58 +237,47 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # macOS x86_64 — built under Rosetta 2 on a macos-latest (arm64) runner.
-  # macos-13 (last Intel runner) is being retired; arm64 + Rosetta replaces it.
-  # x86_64 Homebrew is installed at /usr/local so deps are x86_64-native.
-  # The entire build runs as an x86_64 process via `arch -x86_64`, so config.guess
-  # detects x86_64-apple-darwin and the compiled binaries are x86_64.
+  # macOS x86_64 — arm64 runner with x86_64 Homebrew under Rosetta.
+  # macos-13 (last Intel runner) is being retired. We install x86_64 Homebrew
+  # at /usr/local under Rosetta so avr-gcc and all its dylib dependencies are
+  # native x86_64. The same bundle-macos-toolchain.sh script then assembles
+  # and relocates the staged directory.
   # ---------------------------------------------------------------------------
   build-macos-x64:
-    name: Build macOS x64 toolchain (arm64 + Rosetta)
+    name: Build macOS x64 toolchain (arm64 + Rosetta + x86_64 Homebrew)
     runs-on: macos-latest
-    timeout-minutes: 150
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
+
+      - name: Query avr-gcc formula version (arm64 brew, same formula)
+        id: avrgcc-ver
+        run: |
+          VER=$(brew info --json avr-gcc | python3 -c \
+            'import sys,json; d=json.load(sys.stdin)[0]; print(d["versions"]["stable"])')
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
 
       - name: Restore toolchain cache
         id: toolchain-cache
         uses: actions/cache@v4
         with:
           path: macos-x64-toolchain-staged/
-          key: toolchain-macos-x64-v2-${{ hashFiles('avr-gcc-build.sh') }}
+          key: toolchain-macos-x64-hb-${{ steps.avrgcc-ver.outputs.ver }}
 
-      - name: Install x86_64 Homebrew and build dependencies (under Rosetta)
+      - name: Install x86_64 Homebrew and AVR toolchain (under Rosetta)
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
         run: |
-          # Install x86_64 Homebrew at /usr/local if not already present.
-          # NONINTERACTIVE=1 suppresses the interactive prompts.
           if [ ! -f /usr/local/bin/brew ]; then
             NONINTERACTIVE=1 arch -x86_64 /bin/bash -c \
               "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
           fi
-          arch -x86_64 /usr/local/bin/brew install \
-            automake texinfo wget gmp mpfr libmpc bison flex
+          arch -x86_64 /usr/local/bin/brew install avr-gcc avr-binutils
 
-      - name: Build AVR-GCC toolchain (x86_64 via Rosetta)
+      - name: Assemble and bundle toolchain (x86_64)
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        run: |
-          BISON_BIN=$(arch -x86_64 /usr/local/bin/brew --prefix bison)/bin
-          FLEX_BIN=$(arch -x86_64 /usr/local/bin/brew --prefix flex)/bin
-          TEXINFO_BIN=$(arch -x86_64 /usr/local/bin/brew --prefix texinfo)/bin
-          arch -x86_64 env \
-            FOR_LINUX=1 FOR_WINX64=0 FOR_WINX86=0 JOBCOUNT=4 \
-            PATH="$BISON_BIN:$FLEX_BIN:$TEXINFO_BIN:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
-            CPPFLAGS="-I/usr/local/include" \
-            LDFLAGS="-L/usr/local/lib" \
-            bash avr-gcc-build.sh
-
-      - name: Stage toolchain
-        if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        run: |
-          DIR=$(ls -d build/avr-gcc-*-x64-linux | head -1)
-          cp -r "$DIR" macos-x64-toolchain-staged
+        run: bash scripts/bundle-macos-toolchain.sh /usr/local macos-x64-toolchain-staged
 
       - name: Verify toolchain (must be x86_64)
         run: |

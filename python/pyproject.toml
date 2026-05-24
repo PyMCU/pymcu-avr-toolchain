@@ -40,7 +40,13 @@ pymcu-avr-toolchain-info = "pymcu_avr_toolchain._cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pymcu_avr_toolchain"]
-artifacts = ["src/pymcu_avr_toolchain/bin/**"]
+artifacts = [
+    "src/pymcu_avr_toolchain/bin/**",
+    "src/pymcu_avr_toolchain/lib/**",
+    "src/pymcu_avr_toolchain/avr/**",
+    "src/pymcu_avr_toolchain/libexec/**",
+    "src/pymcu_avr_toolchain/share/**",
+]
 
 [tool.hatch.build.targets.wheel.hooks.custom]
 path = "hatch_build.py"

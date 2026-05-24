@@ -28,6 +28,7 @@ from pathlib import Path
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
 _REQUIRED_BINS = ["avr-gcc", "avr-as", "avr-objcopy"]
+_TOOLCHAIN_SUBDIRS = ["bin", "lib", "avr", "libexec", "share", "include"]
 
 
 class CustomBuildHook(BuildHookInterface):
@@ -35,6 +36,7 @@ class CustomBuildHook(BuildHookInterface):
 
     def initialize(self, version: str, build_data: dict) -> None:
         root = Path(self.root)
+        project_version = version
         toolchain_dir = _find_toolchain_dir(root)
 
         self.app.display_info(f"[hatch-hook] Using toolchain: {toolchain_dir}")
@@ -43,14 +45,24 @@ class CustomBuildHook(BuildHookInterface):
         _validate_toolchain(bin_src)
 
         pkg_dir = root / "src" / "pymcu_avr_toolchain"
+
+        # Remove any previously copied toolchain subdirectories.
+        for sub in _TOOLCHAIN_SUBDIRS:
+            d = pkg_dir / sub
+            if d.exists():
+                shutil.rmtree(d)
+
+        # Copy the full toolchain installation (bin/, lib/, avr/, libexec/, share/).
+        # A self-contained avr-gcc binary needs lib/gcc/avr/<version>/device-specs/
+        # alongside it; copying only bin/ produces a binary that cannot resolve
+        # chip-specific specs when seeded to a different location.
+        for item in toolchain_dir.iterdir():
+            if item.is_dir():
+                shutil.copytree(str(item), str(pkg_dir / item.name))
         bin_dst = pkg_dir / "bin"
+        self.app.display_info(f"[hatch-hook] Copied full toolchain from: {toolchain_dir}")
 
-        if bin_dst.exists():
-            shutil.rmtree(bin_dst)
-        shutil.copytree(str(bin_src), str(bin_dst))
-        self.app.display_info(f"[hatch-hook] Copied toolchain bin/ to: {bin_dst}")
-
-        manifest = _build_manifest(toolchain_dir, bin_dst)
+        manifest = _build_manifest(toolchain_dir, bin_dst, project_version)
         (pkg_dir / "_manifest.json").write_text(json.dumps(manifest, indent=2))
         self.app.display_info(f"[hatch-hook] Manifest: {manifest}")
 
@@ -60,11 +72,13 @@ class CustomBuildHook(BuildHookInterface):
         self.app.display_info(f"[hatch-hook] Wheel tag: py3-none-{plat_tag}")
 
     def finalize(self, version: str, build_data: dict, artifact_path: str) -> None:
-        bin_dst = Path(self.root) / "src" / "pymcu_avr_toolchain" / "bin"
-        if bin_dst.exists():
-            shutil.rmtree(bin_dst)
-            self.app.display_info(f"[hatch-hook] Cleaned up: {bin_dst}")
-        manifest = Path(self.root) / "src" / "pymcu_avr_toolchain" / "_manifest.json"
+        pkg_dir = Path(self.root) / "src" / "pymcu_avr_toolchain"
+        for sub in _TOOLCHAIN_SUBDIRS:
+            d = pkg_dir / sub
+            if d.exists():
+                shutil.rmtree(d)
+                self.app.display_info(f"[hatch-hook] Cleaned up: {d}")
+        manifest = pkg_dir / "_manifest.json"
         if manifest.exists():
             manifest.unlink()
 
@@ -112,6 +126,10 @@ def _build_manifest(toolchain_dir: Path, bin_dir: Path) -> dict:
     as_version = _read_tool_version(bin_dir / f"avr-as{exe}", r"(\d+\.\d+)")
     gdb_path = bin_dir / f"avr-gdb{exe}"
     gdb_version = _read_tool_version(gdb_path, r"(\d+\.\d+)") if gdb_path.exists() else "n/a"
+
+    # Fall back to the project version when binary detection fails (e.g. cross-build).
+    if gcc_version == "unknown":
+        gcc_version = project_version
 
     return {
         "gcc_version": gcc_version,

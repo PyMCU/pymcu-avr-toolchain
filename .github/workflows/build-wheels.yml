@@ -184,161 +184,71 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # macOS arm64 — native Apple Silicon (macos-14).
+  # macOS arm64 (Apple Silicon) — ZakKemble self-contained pre-built release
   # ---------------------------------------------------------------------------
   build-macos-arm64:
-    name: Build macOS arm64 toolchain
-    runs-on: macos-14
-    timeout-minutes: 120
-    permissions:
-      contents: read
+    name: Download macOS arm64 toolchain (ZakKemble)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
-      - name: Tap AVR Homebrew formula (arm64)
-        run: brew tap osx-cross/avr
-
-      - name: Query AVR formula version (arm64)
-        id: formula-ver
+      - name: Download ZakKemble macOS arm64 toolchain
         run: |
-          FORMULA_PATH=$(brew formula osx-cross/avr/avr-gcc)
-          FORMULA_HASH=$(shasum -a 256 "$FORMULA_PATH" | awk '{print $1}')
-          echo "hash=$FORMULA_HASH" >> $GITHUB_OUTPUT
-          echo "Formula hash: $FORMULA_HASH"
+          VER="${VER_GCC:-15.2.0}"
+          TAG="v${VER}-1"
+          URL="https://github.com/ZakKemble/avr-gcc-build/releases/download/${TAG}/avr-gcc-${VER}-arm64-macos.tar.bz2"
+          echo "Downloading: $URL"
+          mkdir -p output
+          wget -q "$URL" -O toolchain.tar.bz2
+          tar -xjf toolchain.tar.bz2 -C output/
+          echo "Extracted: $(ls output/)"
 
-      - name: Restore toolchain cache (arm64)
-        id: toolchain-cache
-        uses: actions/cache@v4
-        with:
-          path: output/avr-gcc-homebrew-arm64-macos/
-          key: toolchain-macos-arm64-v1-${{ steps.formula-ver.outputs.hash }}
-
-      - name: Install AVR toolchain via Homebrew (arm64)
-        if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        run: brew install avr-gcc avr-binutils
-
-      - name: Locate arm64 toolchain binaries
-        id: locate-arm64
-        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+      - name: Verify toolchain
         run: |
-          AVR_GCC=$(which avr-gcc)
-          BIN_DIR=$(dirname "$AVR_GCC")
-          echo "bin_dir=$BIN_DIR" >> $GITHUB_OUTPUT
-          echo "Found arm64 avr-gcc at: $AVR_GCC"
-          avr-gcc --version
-
-      - name: Assemble arm64 toolchain directory
-        if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p output/avr-gcc-homebrew-arm64-macos/bin
-          BIN_DIR="${{ steps.locate-arm64.outputs.bin_dir }}"
-          for bin in avr-gcc avr-g++ avr-as avr-ld avr-ar avr-objcopy avr-objdump avr-size avr-nm avr-strip avr-ranlib avr-strings; do
-            [ -f "$BIN_DIR/$bin" ] && cp "$BIN_DIR/$bin" output/avr-gcc-homebrew-arm64-macos/bin/ || true
-          done
-          SYSROOT=$(brew --prefix avr-gcc)/avr
-          if [ -d "$SYSROOT" ]; then
-            cp -r "$SYSROOT" output/avr-gcc-homebrew-arm64-macos/avr
-          fi
-
-      - name: Verify arm64 toolchain
-        run: |
-          # Check the three binaries required by hatch_build.py (_REQUIRED_BINS).
-          for bin in avr-gcc avr-as avr-objcopy; do
-            test -f output/avr-gcc-homebrew-arm64-macos/bin/$bin || (echo "MISSING: $bin" && exit 1)
-          done
-          echo "arm64 toolchain OK"
+          BIN=$(ls output/avr-gcc-*/bin/avr-gcc | head -1)
+          echo "avr-gcc: $BIN"
+          file "$BIN"
 
       - name: Upload macOS arm64 toolchain
         uses: actions/upload-artifact@v4
         with:
           name: toolchain-macos-arm64
-          path: output/avr-gcc-homebrew-arm64-macos/
+          path: output/avr-gcc-*/
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # macOS x86_64 — Apple Silicon runner (macos-14) using Rosetta 2.
-  # The x86_64 Homebrew prefix lives at /usr/local; all brew/binary calls
-  # are prefixed with `arch -x86_64` to select the Intel slice.
-  # Runs in parallel with build-macos-arm64.
+  # macOS x86_64 — ZakKemble self-contained pre-built release
   # ---------------------------------------------------------------------------
   build-macos-x64:
-    name: Build macOS x86_64 toolchain
-    runs-on: macos-14
-    timeout-minutes: 120
-    permissions:
-      contents: read
+    name: Download macOS x64 toolchain (ZakKemble)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install x86_64 Homebrew (Rosetta 2)
+      - name: Download ZakKemble macOS x64 toolchain
         run: |
-          if [ ! -f /usr/local/bin/brew ]; then
-            arch -x86_64 /bin/bash -c \
-              "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          fi
+          VER="${VER_GCC:-15.2.0}"
+          TAG="v${VER}-1"
+          URL="https://github.com/ZakKemble/avr-gcc-build/releases/download/${TAG}/avr-gcc-${VER}-x64-macos.tar.bz2"
+          echo "Downloading: $URL"
+          mkdir -p output
+          wget -q "$URL" -O toolchain.tar.bz2
+          tar -xjf toolchain.tar.bz2 -C output/
+          echo "Extracted: $(ls output/)"
 
-      - name: Tap AVR Homebrew formula (x86_64)
+      - name: Verify toolchain
         run: |
-          arch -x86_64 /usr/local/bin/brew tap osx-cross/avr
+          BIN=$(ls output/avr-gcc-*/bin/avr-gcc | head -1)
+          echo "avr-gcc: $BIN"
+          file "$BIN"
 
-      - name: Query AVR formula version (x86_64)
-        id: formula-ver
-        run: |
-          FORMULA_PATH=$(arch -x86_64 /usr/local/bin/brew formula osx-cross/avr/avr-gcc)
-          FORMULA_HASH=$(shasum -a 256 "$FORMULA_PATH" | awk '{print $1}')
-          echo "hash=$FORMULA_HASH" >> $GITHUB_OUTPUT
-          echo "Formula hash: $FORMULA_HASH"
-
-      - name: Restore toolchain cache (x86_64)
-        id: toolchain-cache
-        uses: actions/cache@v4
-        with:
-          path: output/avr-gcc-homebrew-x64-macos/
-          key: toolchain-macos-x64-v1-${{ steps.formula-ver.outputs.hash }}
-
-      - name: Install AVR toolchain packages via Homebrew (x86_64)
-        if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        run: arch -x86_64 /usr/local/bin/brew install avr-gcc avr-binutils
-
-      - name: Locate x86_64 toolchain binaries
-        id: locate-x64
-        if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        run: |
-          # Use the global x86_64 Homebrew bin dir (/usr/local/bin) where all
-          # formula executables are symlinked (both avr-gcc and avr-binutils tools
-          # such as avr-as, avr-objcopy). Using `brew --prefix avr-gcc` only finds
-          # the avr-gcc Cellar prefix and misses the avr-binutils tools.
-          BIN_DIR=/usr/local/bin
-          echo "bin_dir=$BIN_DIR" >> $GITHUB_OUTPUT
-          echo "Found x86_64 avr-gcc at: $BIN_DIR/avr-gcc"
-          arch -x86_64 "$BIN_DIR/avr-gcc" --version
-
-      - name: Assemble x86_64 toolchain directory
-        if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p output/avr-gcc-homebrew-x64-macos/bin
-          BIN_DIR="${{ steps.locate-x64.outputs.bin_dir }}"
-          for bin in avr-gcc avr-g++ avr-as avr-ld avr-ar avr-objcopy avr-objdump avr-size avr-nm avr-strip avr-ranlib avr-strings; do
-            [ -f "$BIN_DIR/$bin" ] && cp "$BIN_DIR/$bin" output/avr-gcc-homebrew-x64-macos/bin/ || true
-          done
-          SYSROOT=$(arch -x86_64 /usr/local/bin/brew --prefix avr-gcc)/avr
-          if [ -d "$SYSROOT" ]; then
-            cp -r "$SYSROOT" output/avr-gcc-homebrew-x64-macos/avr
-          fi
-
-      - name: Verify x86_64 toolchain
-        run: |
-          # Check the three binaries required by hatch_build.py (_REQUIRED_BINS).
-          for bin in avr-gcc avr-as avr-objcopy; do
-            test -f output/avr-gcc-homebrew-x64-macos/bin/$bin || (echo "MISSING: $bin" && exit 1)
-          done
-          echo "x86_64 toolchain OK"
-
-      - name: Upload macOS x86_64 toolchain
+      - name: Upload macOS x64 toolchain
         uses: actions/upload-artifact@v4
         with:
           name: toolchain-macos-x64
-          path: output/avr-gcc-homebrew-x64-macos/
+          path: output/avr-gcc-*/
           retention-days: 1
 
   # ---------------------------------------------------------------------------
@@ -411,16 +321,22 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: toolchain-macos-arm64
-          path: toolchain/
-      - name: Verify toolchain artifact
+          path: toolchain-root/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install hatchling
+      - name: Resolve toolchain directory
+        id: resolve
         run: |
-          echo "Contents of toolchain/:"
-          find toolchain/ -maxdepth 2 | head -20
-          test -d toolchain/bin || (echo "ERROR: toolchain/bin missing" && exit 1)
-      - uses: astral-sh/setup-uv@v6
+          # ZakKemble tarballs extract to a versioned subdirectory.
+          DIR=$(ls -d toolchain-root/avr-gcc-* 2>/dev/null | head -1 || echo "toolchain-root")
+          echo "dir=$DIR" >> $GITHUB_OUTPUT
+          echo "Toolchain dir: $DIR"
+          ls "$DIR/bin/"
       - name: Build wheel
         env:
-          AVRT_TOOLCHAIN_DIR: ${{ github.workspace }}/toolchain
+          AVRT_TOOLCHAIN_DIR: ${{ github.workspace }}/${{ steps.resolve.outputs.dir }}
           WHEEL_PLATFORM_TAG: macosx_14_0_arm64
         run: uv build --wheel python/
       - uses: actions/upload-artifact@v4
@@ -439,16 +355,21 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: toolchain-macos-x64
-          path: toolchain/
-      - name: Verify toolchain artifact
+          path: toolchain-root/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install hatchling
+      - name: Resolve toolchain directory
+        id: resolve
         run: |
-          echo "Contents of toolchain/:"
-          find toolchain/ -maxdepth 2 | head -20
-          test -d toolchain/bin || (echo "ERROR: toolchain/bin missing" && exit 1)
-      - uses: astral-sh/setup-uv@v6
+          DIR=$(ls -d toolchain-root/avr-gcc-* 2>/dev/null | head -1 || echo "toolchain-root")
+          echo "dir=$DIR" >> $GITHUB_OUTPUT
+          echo "Toolchain dir: $DIR"
+          ls "$DIR/bin/"
       - name: Build wheel
         env:
-          AVRT_TOOLCHAIN_DIR: ${{ github.workspace }}/toolchain
+          AVRT_TOOLCHAIN_DIR: ${{ github.workspace }}/${{ steps.resolve.outputs.dir }}
           WHEEL_PLATFORM_TAG: macosx_13_0_x86_64
         run: uv build --wheel python/
       - uses: actions/upload-artifact@v4

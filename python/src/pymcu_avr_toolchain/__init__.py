@@ -90,7 +90,7 @@ def get_bin_dir() -> Path:
     bin_dir = cache_dir / "bin"
     sentinel = cache_dir / ".seeded_from_wheel"
 
-    if sentinel.exists() and bin_dir.is_dir():
+    if _cache_is_complete(cache_dir, bin_dir, sentinel, version):
         return bin_dir
 
     _seed_cache(cache_dir, bin_dir, sentinel)
@@ -110,8 +110,15 @@ def get_tool(name: str) -> Path:
 
 
 def toolchain_version() -> str:
-    """Return the GCC version string from the build manifest."""
-    return manifest().get("gcc_version", "unknown")
+    """Return the GCC version from the manifest, or the package version as fallback."""
+    v = manifest().get("gcc_version", "unknown")
+    if v and v != "unknown":
+        return v
+    try:
+        from importlib.metadata import version as _pkg_version  # noqa: PLC0415
+        return _pkg_version("pymcu-avr-toolchain")
+    except Exception:
+        return "unknown"
 
 
 def manifest() -> dict:
@@ -147,27 +154,48 @@ def _platform_key() -> str:
     return f"{os_name}-{arch}"
 
 
+def _cache_is_complete(
+    cache_dir: Path, bin_dir: Path, sentinel: Path, version: str
+) -> bool:
+    """Return True if the global cache is up-to-date and fully seeded."""
+    if not sentinel.exists() or not bin_dir.is_dir():
+        return False
+    if sentinel.read_text(encoding="utf-8").strip() != version:
+        return False
+    # If the wheel includes lib/ (full self-contained build), the cache must too.
+    if (_PKG_DIR / "lib").is_dir() and not (cache_dir / "lib").is_dir():
+        return False
+    return True
+
+
 def _seed_cache(cache_dir: Path, bin_dir: Path, sentinel: Path) -> None:
-    src = _PKG_DIR / "bin"
-    if not src.is_dir():
+    if not (_PKG_DIR / "bin").is_dir():
         raise RuntimeError(
             "pymcu-avr-toolchain: no binaries found in package.\n"
             "Install the platform-specific wheel (not the sdist)."
         )
 
     with _seed_lock(cache_dir):
-        if sentinel.exists() and bin_dir.is_dir():
+        version = toolchain_version()
+        if _cache_is_complete(cache_dir, bin_dir, sentinel, version):
             return
 
-        bin_dir.mkdir(parents=True, exist_ok=True)
-        _hardlink_or_copy_tree(src, bin_dir)
+        # Seed all toolchain directories (bin/, lib/, avr/, libexec/, share/).
+        # A self-contained avr-gcc needs lib/gcc/avr/<version>/device-specs/
+        # alongside the binary; seeding only bin/ produces a non-functional copy.
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        for item in _PKG_DIR.iterdir():
+            if item.is_dir() and item.name != "__pycache__":
+                dst = cache_dir / item.name
+                dst.mkdir(parents=True, exist_ok=True)
+                _hardlink_or_copy_tree(item, dst)
 
         if sys.platform != "win32":
             for entry in bin_dir.iterdir():
                 if entry.is_file():
                     entry.chmod(entry.stat().st_mode | 0o111)
 
-        sentinel.write_text(toolchain_version())
+        sentinel.write_text(version, encoding="utf-8")
 
 
 def _hardlink_or_copy_tree(src: Path, dst: Path) -> None:

@@ -201,13 +201,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Query avr-gcc Homebrew formula version
+      - name: Query avr-gcc formula version
         id: avrgcc-ver
         run: |
-          VER=$(brew info --json avr-gcc | python3 -c \
-            'import sys,json; d=json.load(sys.stdin)[0]; print(d["versions"]["stable"])')
+          # brew info plain text is more reliable than --json (formula name may
+          # be versioned, e.g. avr-gcc@14, causing --json to return empty output).
+          VER=""
+          for formula in avr-gcc avr-gcc@14 avr-gcc@15; do
+            VER=$(brew info "$formula" 2>/dev/null \
+              | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(_[0-9]+)?' | head -1 || true)
+            [ -n "$VER" ] && { echo "Formula: $formula  Version: $VER"; break; }
+          done
+          [ -z "$VER" ] && VER="weekly-$(date +%Y%W)"
           echo "ver=$VER" >> "$GITHUB_OUTPUT"
-          echo "avr-gcc formula version: $VER"
 
       - name: Restore toolchain cache
         id: toolchain-cache
@@ -252,11 +258,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Query avr-gcc formula version (arm64 brew, same formula)
+      - name: Query avr-gcc formula version
         id: avrgcc-ver
         run: |
-          VER=$(brew info --json avr-gcc | python3 -c \
-            'import sys,json; d=json.load(sys.stdin)[0]; print(d["versions"]["stable"])')
+          VER=""
+          for formula in avr-gcc avr-gcc@14 avr-gcc@15; do
+            VER=$(brew info "$formula" 2>/dev/null \
+              | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(_[0-9]+)?' | head -1 || true)
+            [ -n "$VER" ] && { echo "Formula: $formula  Version: $VER"; break; }
+          done
+          [ -z "$VER" ] && VER="weekly-$(date +%Y%W)"
           echo "ver=$VER" >> "$GITHUB_OUTPUT"
 
       - name: Restore toolchain cache

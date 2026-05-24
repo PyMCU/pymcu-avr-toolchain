@@ -243,95 +243,13 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # macOS x86_64 — arm64 runner. Downloads x86_64 (intel) bottles from the
-  # osx-cross/avr tap using the arm64 brew already on the runner, extracts
-  # them into /tmp/x64_cellar/, and creates /usr/local/opt/<formula> symlinks
-  # so bundle-macos-toolchain.sh can find the kegs and dylibs without a
-  # second (x86_64) Homebrew installation. Fast: ~3-5 min download only.
-  # ---------------------------------------------------------------------------
-  build-macos-x64:
-    name: Build macOS x64 toolchain (brew fetch --arch=intel)
-    runs-on: macos-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Query avr-gcc formula version (from arm64 brew)
-        id: avrgcc-ver
-        run: |
-          # avr-gcc lives in osx-cross/avr — tap to make it queryable.
-          brew tap osx-cross/avr
-          VER=$(brew info avr-gcc 2>/dev/null \
-            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(_[0-9]+)?' | head -1 || true)
-          [ -z "$VER" ] && VER="weekly-$(date +%Y%W)"
-          echo "ver=$VER" >> "$GITHUB_OUTPUT"
-          echo "avr-gcc version: $VER"
-
-      - name: Restore toolchain cache
-        id: toolchain-cache
-        uses: actions/cache@v4
-        with:
-          path: macos-x64-toolchain-staged/
-          key: toolchain-macos-x64-hb-${{ steps.avrgcc-ver.outputs.ver }}
-
-      - name: Download x86_64 avr-gcc bottles (via arm64 brew)
-        if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        run: |
-          # Mark time so we can find newly downloaded bottles afterwards.
-          touch /tmp/fetch_before
-          # --arch=intel tells brew to download x86_64 bottles.
-          # --dependencies pulls gmp, mpfr, mpc, isl, etc. automatically.
-          # No x86_64 Homebrew installation required.
-          brew fetch --os=ventura --arch=intel --deps avr-gcc avr-binutils
-
-      - name: Extract bottles into fake x86_64 prefix
-        if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        run: |
-          CACHE_DIR="$(brew --cache)/downloads"
-          mkdir -p /tmp/x64_cellar
-
-          # Extract all bottles downloaded since the timestamp marker.
-          find "$CACHE_DIR" -name "*.bottle.*" -newer /tmp/fetch_before | while read -r bottle; do
-            echo "Extracting: $(basename "$bottle")"
-            tar -xzf "$bottle" -C /tmp/x64_cellar
-          done
-
-          # Create /usr/local/opt/<formula> → extracted keg symlinks.
-          # x86_64 binaries have /usr/local/opt/... hard-coded as dylib paths,
-          # so bundle-macos-toolchain.sh can find them via BREW_PREFIX=/usr/local.
-          mkdir -p /usr/local/opt
-          for formula_dir in /tmp/x64_cellar/*/; do
-            formula_name="$(basename "${formula_dir%/}")"
-            version_dir="$(ls -d "${formula_dir}"*/ 2>/dev/null | head -1)"
-            [ -n "$version_dir" ] || continue
-            ln -sfn "$(cd "$version_dir" && pwd)" "/usr/local/opt/$formula_name"
-            echo "  /usr/local/opt/$formula_name -> $(readlink /usr/local/opt/$formula_name)"
-          done
-
-          echo "Kegs in /usr/local/opt/:"
-          ls /usr/local/opt/ | grep -E 'avr|gmp|mpfr|mpc|isl' || echo "  (none matched)"
-
-      - name: Assemble and bundle toolchain (x86_64)
-        if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        run: bash scripts/bundle-macos-toolchain.sh /usr/local macos-x64-toolchain-staged
-
-      - name: Verify toolchain (must be x86_64)
-        run: |
-          file macos-x64-toolchain-staged/bin/avr-gcc
-          macos-x64-toolchain-staged/bin/avr-gcc --version
-          macos-x64-toolchain-staged/bin/avr-gcc -mmcu=atmega328p --print-libgcc-file-name
-
-      - name: Upload macOS x64 toolchain
-        uses: actions/upload-artifact@v4
-        with:
-          name: toolchain-macos-x64
-          path: macos-x64-toolchain-staged/
-          retention-days: 1
-
-  # ---------------------------------------------------------------------------
   # Package wheels (one job per platform, all run in parallel)
+  #
+  # NOTE: macOS x86_64 (Intel) wheel is intentionally omitted. The osx-cross/avr
+  # tap does not provide x86_64 bottles for avr-gcc or avr-binutils, so building
+  # from source (~60-90 min) would always exceed any practical CI timeout. Intel
+  # Mac users can install avr-gcc via Homebrew (`brew tap osx-cross/avr && brew
+  # install avr-gcc`) and pymcu will detect it automatically via PATH.
   # ---------------------------------------------------------------------------
   package-linux-x64:
     name: Package Linux x64 wheel
@@ -417,34 +335,6 @@ jobs:
           name: wheel-macos-arm64
           path: python/dist/*.whl
 
-  package-macos-x64:
-    name: Package macOS x86_64 wheel
-    needs: build-macos-x64
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: toolchain-macos-x64
-          path: toolchain/
-      - name: Verify toolchain artifact
-        run: |
-          echo "Contents of toolchain/:"
-          find toolchain/ -maxdepth 2 | head -20
-          test -d toolchain/bin || (echo "ERROR: toolchain/bin missing" && exit 1)
-      - uses: astral-sh/setup-uv@v6
-      - name: Build wheel
-        env:
-          AVRT_TOOLCHAIN_DIR: ${{ github.workspace }}/toolchain
-          WHEEL_PLATFORM_TAG: macosx_13_0_x86_64
-        run: uv build --wheel python/
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wheel-macos-x64
-          path: python/dist/*.whl
-
   # ---------------------------------------------------------------------------
   # Collect, build sdist, smoke-test, and release
   # ---------------------------------------------------------------------------
@@ -454,7 +344,6 @@ jobs:
       - package-linux-x64
       - package-win-x64
       - package-macos-arm64
-      - package-macos-x64
     runs-on: ubuntu-latest
     permissions:
       # NOTE: Change to 'contents: write' when re-enabling GitHub Release creation.

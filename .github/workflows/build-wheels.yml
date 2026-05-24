@@ -210,9 +210,10 @@ jobs:
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
         run: |
           brew install automake texinfo wget gmp mpfr libmpc bison flex
-          # bison and flex are keg-only — add to PATH before the build step
+          # bison, flex, and texinfo are keg-only — add to PATH before the build step
           echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
           echo "$(brew --prefix flex)/bin" >> $GITHUB_PATH
+          echo "$(brew --prefix texinfo)/bin" >> $GITHUB_PATH
 
       - name: Set GCC dependency paths
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
@@ -288,9 +289,10 @@ jobs:
         run: |
           BISON_BIN=$(arch -x86_64 /usr/local/bin/brew --prefix bison)/bin
           FLEX_BIN=$(arch -x86_64 /usr/local/bin/brew --prefix flex)/bin
+          TEXINFO_BIN=$(arch -x86_64 /usr/local/bin/brew --prefix texinfo)/bin
           arch -x86_64 env \
             FOR_LINUX=1 FOR_WINX64=0 FOR_WINX86=0 JOBCOUNT=4 \
-            PATH="$BISON_BIN:$FLEX_BIN:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+            PATH="$BISON_BIN:$FLEX_BIN:$TEXINFO_BIN:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
             CPPFLAGS="-I/usr/local/include" \
             LDFLAGS="-L/usr/local/lib" \
             bash avr-gcc-build.sh

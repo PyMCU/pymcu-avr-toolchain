@@ -136,6 +136,13 @@ OPTS_GDB="
 
 OPTS_LIBC=""
 
+# macOS compatibility: gprofng (binutils 2.40+) and gold require Linux-specific
+# APIs (ptrace, procfs, ELF). Disable them when building on Darwin so that the
+# binutils make step does not fail on macOS runners.
+if [[ "$(uname -s)" == "Darwin" ]]; then
+	OPTS_BINUTILS="$OPTS_BINUTILS	--disable-gprofng --disable-gold"
+fi
+
 # Detect native MSYS2/MinGW Windows build environment.
 # When $MSYSTEM is set (e.g. MINGW64 or MINGW32), we are running inside MSYS2
 # and build the Windows toolchain natively without cross-compilation.

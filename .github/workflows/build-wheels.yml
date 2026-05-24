@@ -243,16 +243,16 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # macOS x86_64 — arm64 runner with x86_64 Homebrew under Rosetta.
-  # macos-13 (last Intel runner) is being retired. We install x86_64 Homebrew
-  # at /usr/local under Rosetta so avr-gcc and all its dylib dependencies are
-  # native x86_64. The same bundle-macos-toolchain.sh script then assembles
-  # and relocates the staged directory.
+  # macOS x86_64 — arm64 runner. Downloads x86_64 (intel) bottles from the
+  # osx-cross/avr tap using the arm64 brew already on the runner, extracts
+  # them into /tmp/x64_cellar/, and creates /usr/local/opt/<formula> symlinks
+  # so bundle-macos-toolchain.sh can find the kegs and dylibs without a
+  # second (x86_64) Homebrew installation. Fast: ~3-5 min download only.
   # ---------------------------------------------------------------------------
   build-macos-x64:
-    name: Build macOS x64 toolchain (arm64 + Rosetta + x86_64 Homebrew)
+    name: Build macOS x64 toolchain (brew fetch --arch=intel)
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -276,16 +276,42 @@ jobs:
           path: macos-x64-toolchain-staged/
           key: toolchain-macos-x64-hb-${{ steps.avrgcc-ver.outputs.ver }}
 
-      - name: Install x86_64 Homebrew and AVR toolchain (under Rosetta)
+      - name: Download x86_64 avr-gcc bottles (via arm64 brew)
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
         run: |
-          if [ ! -f /usr/local/bin/brew ]; then
-            NONINTERACTIVE=1 arch -x86_64 /bin/bash -c \
-              "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          fi
-          # Add the tap and install under x86_64 Homebrew
-          arch -x86_64 /usr/local/bin/brew tap osx-cross/avr
-          arch -x86_64 /usr/local/bin/brew install avr-gcc avr-binutils
+          # Mark time so we can find newly downloaded bottles afterwards.
+          touch /tmp/fetch_before
+          # --arch=intel tells brew to download x86_64 bottles.
+          # --dependencies pulls gmp, mpfr, mpc, isl, etc. automatically.
+          # No x86_64 Homebrew installation required.
+          brew fetch --os=ventura --arch=intel --dependencies avr-gcc avr-binutils
+
+      - name: Extract bottles into fake x86_64 prefix
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        run: |
+          CACHE_DIR="$(brew --cache)/downloads"
+          mkdir -p /tmp/x64_cellar
+
+          # Extract all bottles downloaded since the timestamp marker.
+          find "$CACHE_DIR" -name "*.bottle.*" -newer /tmp/fetch_before | while read -r bottle; do
+            echo "Extracting: $(basename "$bottle")"
+            tar -xzf "$bottle" -C /tmp/x64_cellar
+          done
+
+          # Create /usr/local/opt/<formula> → extracted keg symlinks.
+          # x86_64 binaries have /usr/local/opt/... hard-coded as dylib paths,
+          # so bundle-macos-toolchain.sh can find them via BREW_PREFIX=/usr/local.
+          mkdir -p /usr/local/opt
+          for formula_dir in /tmp/x64_cellar/*/; do
+            formula_name="$(basename "${formula_dir%/}")"
+            version_dir="$(ls -d "${formula_dir}"*/ 2>/dev/null | head -1)"
+            [ -n "$version_dir" ] || continue
+            ln -sfn "$(cd "$version_dir" && pwd)" "/usr/local/opt/$formula_name"
+            echo "  /usr/local/opt/$formula_name -> $(readlink /usr/local/opt/$formula_name)"
+          done
+
+          echo "Kegs in /usr/local/opt/:"
+          ls /usr/local/opt/ | grep -E 'avr|gmp|mpfr|mpc|isl' || echo "  (none matched)"
 
       - name: Assemble and bundle toolchain (x86_64)
         if: steps.toolchain-cache.outputs.cache-hit != 'true'

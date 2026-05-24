@@ -201,19 +201,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Add osx-cross/avr tap
+        run: |
+          # avr-gcc is not in homebrew-core; it lives in the osx-cross/avr tap.
+          brew tap osx-cross/avr
+
       - name: Query avr-gcc formula version
         id: avrgcc-ver
         run: |
-          # brew info plain text is more reliable than --json (formula name may
-          # be versioned, e.g. avr-gcc@14, causing --json to return empty output).
-          VER=""
-          for formula in avr-gcc avr-gcc@14 avr-gcc@15; do
-            VER=$(brew info "$formula" 2>/dev/null \
-              | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(_[0-9]+)?' | head -1 || true)
-            [ -n "$VER" ] && { echo "Formula: $formula  Version: $VER"; break; }
-          done
+          VER=$(brew info avr-gcc 2>/dev/null \
+            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(_[0-9]+)?' | head -1 || true)
           [ -z "$VER" ] && VER="weekly-$(date +%Y%W)"
           echo "ver=$VER" >> "$GITHUB_OUTPUT"
+          echo "avr-gcc version: $VER"
 
       - name: Restore toolchain cache
         id: toolchain-cache
@@ -258,17 +258,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Query avr-gcc formula version
+      - name: Query avr-gcc formula version (from arm64 brew)
         id: avrgcc-ver
         run: |
-          VER=""
-          for formula in avr-gcc avr-gcc@14 avr-gcc@15; do
-            VER=$(brew info "$formula" 2>/dev/null \
-              | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(_[0-9]+)?' | head -1 || true)
-            [ -n "$VER" ] && { echo "Formula: $formula  Version: $VER"; break; }
-          done
+          # avr-gcc lives in osx-cross/avr — tap to make it queryable.
+          brew tap osx-cross/avr
+          VER=$(brew info avr-gcc 2>/dev/null \
+            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(_[0-9]+)?' | head -1 || true)
           [ -z "$VER" ] && VER="weekly-$(date +%Y%W)"
           echo "ver=$VER" >> "$GITHUB_OUTPUT"
+          echo "avr-gcc version: $VER"
 
       - name: Restore toolchain cache
         id: toolchain-cache
@@ -284,6 +283,8 @@ jobs:
             NONINTERACTIVE=1 arch -x86_64 /bin/bash -c \
               "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
           fi
+          # Add the tap and install under x86_64 Homebrew
+          arch -x86_64 /usr/local/bin/brew tap osx-cross/avr
           arch -x86_64 /usr/local/bin/brew install avr-gcc avr-binutils
 
       - name: Assemble and bundle toolchain (x86_64)

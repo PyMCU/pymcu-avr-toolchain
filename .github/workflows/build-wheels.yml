@@ -190,6 +190,8 @@ jobs:
     name: Download macOS arm64 toolchain (ZakKemble)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -224,6 +226,8 @@ jobs:
     name: Download macOS x64 toolchain (ZakKemble)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -322,10 +326,7 @@ jobs:
         with:
           name: toolchain-macos-arm64
           path: toolchain-root/
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install hatchling
+      - uses: astral-sh/setup-uv@v6
       - name: Resolve toolchain directory
         id: resolve
         run: |
@@ -356,10 +357,7 @@ jobs:
         with:
           name: toolchain-macos-x64
           path: toolchain-root/
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install hatchling
+      - uses: astral-sh/setup-uv@v6
       - name: Resolve toolchain directory
         id: resolve
         run: |

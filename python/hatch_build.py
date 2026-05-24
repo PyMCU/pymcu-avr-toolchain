@@ -119,7 +119,7 @@ def _validate_toolchain(bin_dir: Path) -> None:
         )
 
 
-def _build_manifest(toolchain_dir: Path, bin_dir: Path) -> dict:
+def _build_manifest(toolchain_dir: Path, bin_dir: Path, project_version: str) -> dict:
     plat_tag = os.environ.get("WHEEL_PLATFORM_TAG", "")
     exe = ".exe" if sys.platform == "win32" or plat_tag.startswith("win") else ""
     gcc_version = _read_tool_version(bin_dir / f"avr-gcc{exe}", r"(\d+\.\d+\.\d+)")

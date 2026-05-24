@@ -284,7 +284,7 @@ jobs:
           # --arch=intel tells brew to download x86_64 bottles.
           # --dependencies pulls gmp, mpfr, mpc, isl, etc. automatically.
           # No x86_64 Homebrew installation required.
-          brew fetch --os=ventura --arch=intel --dependencies avr-gcc avr-binutils
+          brew fetch --os=ventura --arch=intel --deps avr-gcc avr-binutils
 
       - name: Extract bottles into fake x86_64 prefix
         if: steps.toolchain-cache.outputs.cache-hit != 'true'

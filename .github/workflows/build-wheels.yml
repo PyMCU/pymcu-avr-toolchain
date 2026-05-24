@@ -184,75 +184,122 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # macOS arm64 (Apple Silicon) — ZakKemble self-contained pre-built release
+  # macOS arm64 (Apple Silicon) — built from source natively on macos-latest.
+  # avr-gcc-build.sh runs with FOR_LINUX=1 (native host build); on macOS this
+  # produces a macOS arm64 binary. The output dir is renamed to macos-staged/.
+  # Build time: ~75 min cold; cached on hashFiles('avr-gcc-build.sh') so
+  # subsequent runs triggered by the same script version are instant.
   # ---------------------------------------------------------------------------
   build-macos-arm64:
-    name: Download macOS arm64 toolchain (ZakKemble)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    name: Build macOS arm64 toolchain (native)
+    runs-on: macos-latest
+    timeout-minutes: 120
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download ZakKemble macOS arm64 toolchain
+      - name: Restore toolchain cache
+        id: toolchain-cache
+        uses: actions/cache@v4
+        with:
+          path: macos-arm64-toolchain-staged/
+          key: toolchain-macos-arm64-v1-${{ hashFiles('avr-gcc-build.sh') }}
+
+      - name: Install build dependencies
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        run: brew install automake texinfo wget gmp mpfr libmpc
+
+      - name: Set GCC dependency paths
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
         run: |
-          VER="${VER_GCC:-15.2.0}"
-          TAG="v${VER}-1"
-          URL="https://github.com/ZakKemble/avr-gcc-build/releases/download/${TAG}/avr-gcc-${VER}-arm64-macos.tar.bz2"
-          echo "Downloading: $URL"
-          mkdir -p output
-          wget -q "$URL" -O toolchain.tar.bz2
-          tar -xjf toolchain.tar.bz2 -C output/
-          echo "Extracted: $(ls output/)"
+          PREFIX=$(brew --prefix)
+          echo "CPPFLAGS=-I$PREFIX/include" >> $GITHUB_ENV
+          echo "LDFLAGS=-L$PREFIX/lib" >> $GITHUB_ENV
+
+      - name: Build AVR-GCC toolchain
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        env:
+          FOR_LINUX: "1"
+          FOR_WINX64: "0"
+          FOR_WINX86: "0"
+          JOBCOUNT: "4"
+        run: bash avr-gcc-build.sh
+
+      - name: Stage toolchain
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        run: |
+          DIR=$(ls -d build/avr-gcc-*-x64-linux | head -1)
+          cp -r "$DIR" macos-arm64-toolchain-staged
 
       - name: Verify toolchain
         run: |
-          BIN=$(ls output/avr-gcc-*/bin/avr-gcc | head -1)
-          echo "avr-gcc: $BIN"
-          file "$BIN"
+          macos-arm64-toolchain-staged/bin/avr-gcc --version
+          macos-arm64-toolchain-staged/bin/avr-gcc -mmcu=atmega328p --print-libgcc-file-name
 
       - name: Upload macOS arm64 toolchain
         uses: actions/upload-artifact@v4
         with:
           name: toolchain-macos-arm64
-          path: output/avr-gcc-*/
+          path: macos-arm64-toolchain-staged/
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # macOS x86_64 — ZakKemble self-contained pre-built release
+  # macOS x86_64 — built from source natively on macos-13 (last Intel runner).
+  # Same approach as arm64; output is a self-contained x64 macOS binary.
   # ---------------------------------------------------------------------------
   build-macos-x64:
-    name: Download macOS x64 toolchain (ZakKemble)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    name: Build macOS x64 toolchain (native)
+    runs-on: macos-13
+    timeout-minutes: 120
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download ZakKemble macOS x64 toolchain
+      - name: Restore toolchain cache
+        id: toolchain-cache
+        uses: actions/cache@v4
+        with:
+          path: macos-x64-toolchain-staged/
+          key: toolchain-macos-x64-v1-${{ hashFiles('avr-gcc-build.sh') }}
+
+      - name: Install build dependencies
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        run: brew install automake texinfo wget gmp mpfr libmpc
+
+      - name: Set GCC dependency paths
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
         run: |
-          VER="${VER_GCC:-15.2.0}"
-          TAG="v${VER}-1"
-          URL="https://github.com/ZakKemble/avr-gcc-build/releases/download/${TAG}/avr-gcc-${VER}-x64-macos.tar.bz2"
-          echo "Downloading: $URL"
-          mkdir -p output
-          wget -q "$URL" -O toolchain.tar.bz2
-          tar -xjf toolchain.tar.bz2 -C output/
-          echo "Extracted: $(ls output/)"
+          PREFIX=$(brew --prefix)
+          echo "CPPFLAGS=-I$PREFIX/include" >> $GITHUB_ENV
+          echo "LDFLAGS=-L$PREFIX/lib" >> $GITHUB_ENV
+
+      - name: Build AVR-GCC toolchain
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        env:
+          FOR_LINUX: "1"
+          FOR_WINX64: "0"
+          FOR_WINX86: "0"
+          JOBCOUNT: "4"
+        run: bash avr-gcc-build.sh
+
+      - name: Stage toolchain
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        run: |
+          DIR=$(ls -d build/avr-gcc-*-x64-linux | head -1)
+          cp -r "$DIR" macos-x64-toolchain-staged
 
       - name: Verify toolchain
         run: |
-          BIN=$(ls output/avr-gcc-*/bin/avr-gcc | head -1)
-          echo "avr-gcc: $BIN"
-          file "$BIN"
+          macos-x64-toolchain-staged/bin/avr-gcc --version
+          macos-x64-toolchain-staged/bin/avr-gcc -mmcu=atmega328p --print-libgcc-file-name
 
       - name: Upload macOS x64 toolchain
         uses: actions/upload-artifact@v4
         with:
           name: toolchain-macos-x64
-          path: output/avr-gcc-*/
+          path: macos-x64-toolchain-staged/
           retention-days: 1
 
   # ---------------------------------------------------------------------------
@@ -325,19 +372,16 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: toolchain-macos-arm64
-          path: toolchain-root/
-      - uses: astral-sh/setup-uv@v6
-      - name: Resolve toolchain directory
-        id: resolve
+          path: toolchain/
+      - name: Verify toolchain artifact
         run: |
-          # ZakKemble tarballs extract to a versioned subdirectory.
-          DIR=$(ls -d toolchain-root/avr-gcc-* 2>/dev/null | head -1 || echo "toolchain-root")
-          echo "dir=$DIR" >> $GITHUB_OUTPUT
-          echo "Toolchain dir: $DIR"
-          ls "$DIR/bin/"
+          echo "Contents of toolchain/:"
+          find toolchain/ -maxdepth 2 | head -20
+          test -d toolchain/bin || (echo "ERROR: toolchain/bin missing" && exit 1)
+      - uses: astral-sh/setup-uv@v6
       - name: Build wheel
         env:
-          AVRT_TOOLCHAIN_DIR: ${{ github.workspace }}/${{ steps.resolve.outputs.dir }}
+          AVRT_TOOLCHAIN_DIR: ${{ github.workspace }}/toolchain
           WHEEL_PLATFORM_TAG: macosx_14_0_arm64
         run: uv build --wheel python/
       - uses: actions/upload-artifact@v4
@@ -356,18 +400,16 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: toolchain-macos-x64
-          path: toolchain-root/
-      - uses: astral-sh/setup-uv@v6
-      - name: Resolve toolchain directory
-        id: resolve
+          path: toolchain/
+      - name: Verify toolchain artifact
         run: |
-          DIR=$(ls -d toolchain-root/avr-gcc-* 2>/dev/null | head -1 || echo "toolchain-root")
-          echo "dir=$DIR" >> $GITHUB_OUTPUT
-          echo "Toolchain dir: $DIR"
-          ls "$DIR/bin/"
+          echo "Contents of toolchain/:"
+          find toolchain/ -maxdepth 2 | head -20
+          test -d toolchain/bin || (echo "ERROR: toolchain/bin missing" && exit 1)
+      - uses: astral-sh/setup-uv@v6
       - name: Build wheel
         env:
-          AVRT_TOOLCHAIN_DIR: ${{ github.workspace }}/${{ steps.resolve.outputs.dir }}
+          AVRT_TOOLCHAIN_DIR: ${{ github.workspace }}/toolchain
           WHEEL_PLATFORM_TAG: macosx_13_0_x86_64
         run: uv build --wheel python/
       - uses: actions/upload-artifact@v4

@@ -1,6 +1,6 @@
 # pymcu-avr-toolchain
 
-Pre-built **AVR-GCC toolchain** for the [PyMCU](https://github.com/begeistert/pymcu)
+Pre-built **AVR-GCC toolchain** for the [PyMCU](https://github.com/PyMCU/pymcu)
 AVR (ATmega/ATtiny) backend.
 
 The AVR backend compiles PyMCU's architecture-agnostic IR to AVR assembly
@@ -14,7 +14,7 @@ avr-gcc   avr-as   avr-objcopy
 `avr-size`, `avr-gdb`, and `avr-libc`.)
 
 This package is the AVR counterpart of
-[`pymcu-rp2040-toolchain`](https://github.com/begeistert/pymcu-rp2040-toolchain): a
+[`pymcu-rp2040-toolchain`](https://github.com/PyMCU/pymcu-rp2040-toolchain): a
 platform-specific wheel whose only job is to ship those tools so that
 `pip install pymcu-compiler[avr]` is fully self-contained — no separate
 `avr-gcc` installation required on supported platforms.
@@ -50,31 +50,46 @@ See `LICENSES/` and `NOTICE` for the full texts.
 
 ## Installation
 
+```bash
+pip install pymcu-avr-toolchain
+```
+
 `avr-gcc` + `avr-libc` together exceed PyPI's 100 MB per-file ceiling
 (~150 MB per platform). The distribution is therefore split:
 
 | Channel | What it contains |
 |---|---|
-| **PyPI** (`pip install pymcu-avr-toolchain`) | Pure-Python stub — no binaries; tools are resolved from the cache or PATH |
-| **GitHub Releases** | Binary wheels with the full toolchain bundled (~150 MB each) |
+| **PyPI** (`pip install pymcu-avr-toolchain`) | Lightweight stub (~14 KB) |
+| **[GitHub Releases](https://github.com/PyMCU/avr-gcc-build/releases)** | Binary wheels with the full toolchain (~150 MB each) |
 
-### Option A — direct wheel install (recommended for CI / offline use)
+**The binary wheel is downloaded automatically.** The first call to
+`get_bin_dir()` (or any PyMCU build that needs the toolchain) downloads the
+correct wheel for your platform from GitHub Releases and extracts it to the
+shared cache at `~/.pymcu/tools/`. Subsequent calls are instant.
+
+```python
+import pymcu_avr_toolchain
+bin_dir = pymcu_avr_toolchain.get_bin_dir()   # downloads on first call
+```
+
+For CI or air-gapped environments, set `PYMCU_AVR_WHEEL_URL` to override
+the download URL, or install the binary wheel directly:
 
 ```bash
 # Linux x86-64
-pip install https://github.com/begeistert/avr-gcc-build/releases/download/v15.2.0/pymcu_avr_toolchain-15.2.0-py3-none-manylinux_2_17_x86_64.whl
+pip install https://github.com/PyMCU/avr-gcc-build/releases/download/v15.2.0.post5/pymcu_avr_toolchain-15.2.0.post5-py3-none-manylinux_2_17_x86_64.whl
 
 # Linux arm64 (best-effort build)
-pip install https://github.com/begeistert/avr-gcc-build/releases/download/v15.2.0/pymcu_avr_toolchain-15.2.0-py3-none-manylinux_2_17_aarch64.whl
+pip install https://github.com/PyMCU/avr-gcc-build/releases/download/v15.2.0.post5/pymcu_avr_toolchain-15.2.0.post5-py3-none-manylinux_2_17_aarch64.whl
 
 # macOS Apple Silicon
-pip install https://github.com/begeistert/avr-gcc-build/releases/download/v15.2.0/pymcu_avr_toolchain-15.2.0-py3-none-macosx_14_0_arm64.whl
+pip install https://github.com/PyMCU/avr-gcc-build/releases/download/v15.2.0.post5/pymcu_avr_toolchain-15.2.0.post5-py3-none-macosx_14_0_arm64.whl
 
 # Windows x86-64
-pip install https://github.com/begeistert/avr-gcc-build/releases/download/v15.2.0/pymcu_avr_toolchain-15.2.0-py3-none-win_amd64.whl
+pip install https://github.com/PyMCU/avr-gcc-build/releases/download/v15.2.0.post5/pymcu_avr_toolchain-15.2.0.post5-py3-none-win_amd64.whl
 ```
 
-### Option B — system toolchain
+### System toolchain (alternative)
 
 If you already have `avr-gcc` installed, the `AvrToolchain` driver finds
 the tools automatically via `PATH` — no package needed:
@@ -88,9 +103,8 @@ apt install gcc-avr binutils-avr avr-libc
 ```
 
 > **Linux arm64:** Built on GitHub's `ubuntu-24.04-arm` runner. The build
-> script (`avr-gcc-build.sh`) was designed for Linux x64; the arm64 build is
-> best-effort (`continue-on-error`) and may be absent from a release if the
-> runner has issues.
+> script was designed for Linux x64; the arm64 build is best-effort
+> (`continue-on-error`) and may be absent from a release if the runner fails.
 
 > **macOS Intel (x86-64):** The `osx-cross/avr` tap does not provide x86-64
 > bottles for avr-gcc, so no Intel wheel is published.
@@ -101,7 +115,7 @@ apt install gcc-avr binutils-avr avr-libc
 
 | Priority | Source |
 |:---:|---|
-| 1 | `pymcu_avr_toolchain.get_bin_dir()` — wheel bundle (seeded to cache on first call) |
+| 1 | `pymcu_avr_toolchain.get_bin_dir()` — wheel bundle or auto-downloaded cache |
 | 2 | Shared cache `~/.pymcu/tools/<platform>/pymcu-avr-toolchain/<version>/bin/` |
 | 3 | Common keg dirs (`/opt/homebrew/opt/avr-gcc/bin`, `/usr/bin`, …) |
 | 4 | `PATH` |
@@ -111,49 +125,27 @@ A missing wheel never blocks a developer who already has `avr-gcc` installed.
 ## Inspecting installed tools
 
 ```bash
-pymcu-avr-toolchain-info     # entry-point alias
+pymcu-avr-toolchain-info     # entry-point
 python -m pymcu_avr_toolchain
-```
-
-Example output:
-
-```
-bin_dir: /Users/you/.pymcu/tools/darwin-arm64/pymcu-avr-toolchain/15.2.0/bin
-manifest: {
-  "gcc_version": "15.2.0",
-  "as_version": "2.45",
-  "platform": "darwin-arm64"
-}
 ```
 
 ## For maintainers: publishing a new wheel
 
 ### Release process
 
-1. Update `VER_GCC`, `VER_BINUTILS`, `VER_GDB` defaults in `avr-gcc-build.sh`
-   and `version` in `python/pyproject.toml` to match the new GCC release.
+1. Update `VER_GCC`, `VER_BINUTILS`, `VER_GDB` in `avr-gcc-build.sh`
+   and `version` in `python/pyproject.toml`.
 2. Tag and push:
    ```bash
    git tag v15.2.0
    git push origin v15.2.0
    ```
 3. The `build-wheels.yml` workflow fires automatically:
-   - **Linux x64** — builds from source via `avr-gcc-build.sh` (~2 h);
-     result is a fully static toolchain with no runtime dependencies.
-   - **Linux arm64** — same script on `ubuntu-24.04-arm`; best-effort
-     (`continue-on-error`), may be absent if the build fails.
-   - All binary wheels go to **GitHub Releases** (too large for PyPI's
-     100 MB limit); PyPI receives only the pure-Python sdist stub.
-   - **Windows x64** — installs pre-built MSYS2/MINGW64 packages
-     (`mingw-w64-x86_64-avr-gcc`, `avr-libc`, `avr-binutils`).
-   - **macOS arm64** — installs via Homebrew (`osx-cross/avr` tap) and
-     bundles dylibs with rewritten `@rpath` for portability.
-   - `collect-and-release` smoke-tests the Linux wheel and generates
-     `SHA256SUMS`.
-   - `publish-pypi` uploads all wheels + sdist to **public PyPI** via OIDC
-     trusted publishing (no stored token required).
-   - `publish-github-release` creates a GitHub Release and attaches all
-     wheels and `SHA256SUMS` as downloadable assets.
+   - Builds one binary wheel per platform (Linux x64 from source ~2 h,
+     Linux arm64 best-effort, macOS via Homebrew, Windows via MSYS2).
+   - Binary wheels → **GitHub Releases** (too large for PyPI's 100 MB limit).
+   - PyPI receives only the **pure-Python sdist stub**.
+   - `publish-pypi` uses OIDC trusted publishing (no stored token required).
 
 ### Required GitHub configuration
 
@@ -161,32 +153,28 @@ manifest: {
 |---|---|---|
 | `release` environment | Repo → Settings → Environments | Gates OIDC publishing; add tag protection rule `v*` |
 
-### Building a wheel locally (testing)
+### Building a wheel locally
 
 ```bash
-# Build the Linux toolchain from source:
-bash avr-gcc-build.sh
-
-# Build the wheel from the staged output:
 AVRT_TOOLCHAIN_DIR=build/avr-gcc-15.2.0-x64-linux \
 WHEEL_PLATFORM_TAG=manylinux_2_17_x86_64 \
 uv build --wheel python/
 ```
-
-Without `AVRT_TOOLCHAIN_DIR`, `hatch_build.py` looks for a pre-built
-toolchain in `../output/avr-gcc-*-x64-linux` as a local fallback.
 
 ## Environment variables
 
 | Variable | Effect |
 |---|---|
 | `AVRT_TOOLCHAIN_DIR` | Path to a staged AVR-GCC tree for `hatch_build.py` |
+| `AVRT_GCC_VERSION` | Inject GCC version string for cross-build CI steps |
 | `WHEEL_PLATFORM_TAG` | Override the wheel platform tag (e.g. `win_amd64`) |
+| `PYMCU_AVR_WHEEL_URL` | Override the binary wheel download URL (air-gapped installs) |
 | `PYMCU_TOOLS_DIR` | Override the `~/.pymcu/tools` cache root |
-| `PYMCU_TOOLCHAIN_NO_SEEDING` | Set to `1` to skip seeding the cache; use the in-package `bin/` directly |
+| `PYMCU_TOOLCHAIN_NO_SEEDING` | Set to `1` to use the in-package `bin/` directly without seeding the cache |
 
 ## Version history
 
-| Package version | avr-gcc | avr-binutils |
+| Package version | avr-gcc | Notes |
 |---|---|---|
-| 15.2.0 | 15.2.0 | 2.45 |
+| 15.2.0.post5 | 15.2.0 | Fix project URLs; auto-download on first use |
+| 15.2.0 | 15.2.0 | Initial release |

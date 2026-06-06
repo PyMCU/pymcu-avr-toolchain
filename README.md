@@ -1,70 +1,127 @@
-# AVR-GCC
+# pymcu-avr-toolchain
 
-This is where I'll be uploading builds of AVR-GCC for Windows 32 bit, 64 bit and Linux 64 bit, which will also include Binutils, AVR-LibC, AVRDUDE, Make and GDB. I'll be trying to keep the builds up to date with the latest tool releases when I can.
+Pre-built **AVR-GCC toolchain** packaged as a pip-installable Python wheel for
+the [PyMCU](https://github.com/begeistert/pymcu) AVR backend.
 
-The `avr-gcc-build.sh` script was originally a [gist](https://gist.github.com/ZakKemble/edec6914ba719bf339b1b85c1fa792dc), which I've now turned into a repository so releases can be uploaded to GitHub rather than having them hosted on my [website](https://blog.zakkemble.net/avr-gcc-builds/).
+The build script (`avr-gcc-build.sh`) is based on the excellent work of
+[Zak Kemble](https://github.com/ZakKemble/avr-gcc-build). This repo extends
+it with a Python packaging layer so that `pip install pymcu-compiler[avr]`
+is fully self-contained — no separate toolchain installation required on
+supported platforms.
 
-## Upgrading the Arduino IDE
+## Bundled tools and versions
 
-Upgrading the Arduino IDE is pretty easy, though there could be some incompatibilities with certain libraries. Only tested with Arduino 1.8.13.
+| Tool | Version |
+|---|---|
+| avr-gcc | 15.2.0 |
+| avr-binutils (as, ld, objcopy, objdump, …) | 2.45 |
+| avr-gdb | 16.3 |
+| avr-libc | latest |
 
-1. Download and extract the [latest release](https://github.com/ZakKemble/avr-gcc-build/releases)
-2. Navigate to your Arduino IDE folder
-3. Go to `hardware/tools`
-4. Move the `avr` folder somewhere else, like to your desktop (renaming the folder won't work, Arduino has some auto-detect thing which sometimes gets confused)
-5. Move the extracted folder from earlier to the `tools` folder and rename it to `avr`
-6. Copy `bin/avrdude.exe` and `builtin_tools_versions.txt` files and `etc` folder from the old `avr` folder to the new one
-7. Done! Open up the Arduino IDE, load up the Blink example, upload it to your Arduino and make sure the LED is blinking!
+## License
 
-## Docker
+The Python packaging code is **MIT**. The bundled AVR-GCC toolchain is
+derived from GCC and Binutils, which are licensed under **GPL-3.0-or-later**
+and **LGPL-3.0-or-later** respectively. avr-libc is **BSD-2-Clause**.
 
-The script can be ran by itself or within a Docker container.
+See `LICENSES/` and `NOTICE` for the full texts. Because the binaries include
+GPL code, the wheel itself is distributed under GPL-3.0-or-later — the same
+terms as `pymcu-avr-toolchain` on PyPI.
 
-### Build Image
+> **Note on copyleft scope:** The GPL applies to the toolchain binaries
+> themselves, not to the firmware your projects compile with them. Firmware
+> produced by `avr-gcc` is your own work and carries no GPL obligation.
 
-```
-docker build -t avrgccbuild .
-```
+## Installation
 
-### Run Container
+```bash
+# Automatic — included when you install the AVR extra:
+pip install pymcu-compiler[avr]
 
-```
-docker run --rm -it -v "$(pwd)"/output:/output avrgccbuild
-```
-
-On Windows replace `$(pwd)` with `%cd%`:
-
-```
-docker run --rm -it -v "%cd%"/output:/output avrgccbuild
-```
-
-You will find the built toolchains in the `output` directory of your current working directory.
-
-### Environment Variables
-
-|Variable|Default|Description|
-|---|---|---|
-|`JOBCOUNT`|Number of CPU cores your system has|More jobs require more RAM, so if you get errors like `collect2: fatal error: ld terminated with signal 9 [Killed]` then you may need to reduce the job count|
-|`BASE`|Docker: `/avr-gcc-build/build/`<br>Standalone: `[cwd]/build/`|Output directory (must have trailing slash)|
-|`VER_GCC`|`15.2.0`|GCC version|
-|`VER_BINUTILS`|`2.45`|Binutils version|
-|`VER_GDB`|`16.3`|GDB version|
-|`FOR_LINUX`|`1`|Build for Linux. A Linux AVR-GCC toolchain is required to build a Windows toolchain. If the Linux toolchain has already been built then you can set this to `0`. **This is a bit broken at the moment and should stay as `1`**|
-|`FOR_WINX86`|`0`|Build for 32 bit Windows|
-|`FOR_WINX64`|`1`|Build for 64 bit Windows|
-|`BUILD_BINUTILS`|`1`|Build Binutils for selected OSs|
-|`BUILD_GCC`|`1`|Build GCC for selected OSs (requires AVR-Binutils)|
-|`BUILD_GDB`|`1`|Build GDB for selected OSs|
-|`BUILD_LIBC`|`1`|Build AVR-LibC (requires AVR-GCC)|
-
-Change environment variables by passing the `-e` option when running the Docker container:
-
-```
-docker run --rm -it -v "$(pwd)"/output:/output -e VER_GCC="10.1.0" -e BUILD_GDB=0 avrgccbuild
+# Standalone:
+pip install pymcu-avr-toolchain
 ```
 
-## FAQs
+Platform wheels are published for **Linux x86-64**, **macOS arm64**, and
+**Windows x86-64**.
 
-### avr-size does not show percent used / is missing the `-C` or `--mcu` option
+> **macOS Intel (x86-64):** The `osx-cross/avr` Homebrew tap does not provide
+> x86-64 bottles for avr-gcc. Intel Mac users can install via Homebrew
+> (`brew tap osx-cross/avr && brew install avr-gcc`) and PyMCU will detect
+> it automatically.
 
-Use `avr-objdump -Pmem-usage <yourfirmware>.elf` instead. See https://github.com/ZakKemble/avr-gcc-build/issues/3
+## Usage
+
+```python
+import pymcu_avr_toolchain
+
+# Directory containing avr-gcc, avr-as, avr-objcopy, etc.
+bin_dir = pymcu_avr_toolchain.get_bin_dir()
+
+# Path to a specific binary (appends .exe on Windows)
+avr_gcc = pymcu_avr_toolchain.get_tool("avr-gcc")
+
+# Bundled GCC version
+print(pymcu_avr_toolchain.toolchain_version())  # "15.2.0"
+```
+
+Or from the command line:
+
+```bash
+pymcu-avr-toolchain-info
+python -m pymcu_avr_toolchain
+```
+
+## Environment variables
+
+| Variable | Effect |
+|---|---|
+| `PYMCU_TOOLCHAIN_NO_SEEDING` | Set to `1` to skip seeding `~/.pymcu/tools/` and use the in-package `bin/` directly |
+| `PYMCU_TOOLS_DIR` | Override the `~/.pymcu/tools/` cache root |
+
+## For maintainers: publishing a new release
+
+### Prerequisites
+
+- PyPI trusted publisher configured for this repo (OIDC, no stored token)
+- GitHub environment `release` with tag protection rule `v*`
+
+### Release process
+
+1. Update `VER_GCC`, `VER_BINUTILS`, `VER_GDB` defaults in `avr-gcc-build.sh`
+   and `version` in `python/pyproject.toml` to match the new GCC version.
+2. Tag and push:
+   ```bash
+   git tag v15.2.0
+   git push origin v15.2.0
+   ```
+3. The `build-wheels.yml` workflow fires automatically:
+   - **Linux x64** — builds from source via `avr-gcc-build.sh` (~2 h).
+   - **Windows x64** — installs pre-built MSYS2/MINGW64 packages.
+   - **macOS arm64** — installs via Homebrew (`osx-cross/avr` tap) and
+     bundles dylibs with rewritten `@rpath` for portability.
+   - `collect-and-release` smoke-tests the Linux wheel and generates
+     `SHA256SUMS`.
+   - `publish-pypi` uploads all wheels + sdist to **public PyPI** via OIDC
+     trusted publishing (no stored token required).
+   - `publish-github-release` creates a GitHub Release and attaches all
+     wheels and `SHA256SUMS` as downloadable assets.
+
+### Building locally
+
+```bash
+# Build the Linux toolchain (requires Docker or a Linux machine with build deps):
+bash avr-gcc-build.sh
+
+# Stage the output and build the wheel:
+AVRT_TOOLCHAIN_DIR=build/avr-gcc-15.2.0-x64-linux \
+WHEEL_PLATFORM_TAG=manylinux_2_17_x86_64 \
+uv build --wheel python/
+```
+
+## Credits
+
+- **[Zak Kemble](https://github.com/ZakKemble)** — original `avr-gcc-build.sh`
+  build script and pre-built releases.
+- **[PyMCU](https://github.com/begeistert/pymcu)** — Python packaging layer,
+  CI pipeline, and PyPI distribution.

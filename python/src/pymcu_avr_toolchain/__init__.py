@@ -85,15 +85,23 @@ def get_bin_dir() -> Path:
             )
         return bin_dir
 
-    version = toolchain_version()
-    cache_dir = _global_cache_dir() / "pymcu-avr-toolchain" / version
+    # Use the pip package version as cache key, not gcc_version from the manifest.
+    # gcc_version detection fails in cross-build steps (e.g. packaging a macOS
+    # Mach-O binary on an Ubuntu runner), producing garbage like "standard".
+    try:
+        from importlib.metadata import version as _pkg_ver  # noqa: PLC0415
+        cache_key = _pkg_ver("pymcu-avr-toolchain")
+    except Exception:
+        cache_key = toolchain_version()
+
+    cache_dir = _global_cache_dir() / "pymcu-avr-toolchain" / cache_key
     bin_dir = cache_dir / "bin"
     sentinel = cache_dir / ".seeded_from_wheel"
 
-    if _cache_is_complete(cache_dir, bin_dir, sentinel, version):
+    if _cache_is_complete(cache_dir, bin_dir, sentinel, cache_key):
         return bin_dir
 
-    _seed_cache(cache_dir, bin_dir, sentinel)
+    _seed_cache(cache_dir, bin_dir, sentinel, cache_key)
     return bin_dir
 
 
@@ -168,7 +176,7 @@ def _cache_is_complete(
     return True
 
 
-def _seed_cache(cache_dir: Path, bin_dir: Path, sentinel: Path) -> None:
+def _seed_cache(cache_dir: Path, bin_dir: Path, sentinel: Path, cache_key: str) -> None:
     if not (_PKG_DIR / "bin").is_dir():
         raise RuntimeError(
             "pymcu-avr-toolchain: no binaries found in package.\n"
@@ -176,8 +184,7 @@ def _seed_cache(cache_dir: Path, bin_dir: Path, sentinel: Path) -> None:
         )
 
     with _seed_lock(cache_dir):
-        version = toolchain_version()
-        if _cache_is_complete(cache_dir, bin_dir, sentinel, version):
+        if _cache_is_complete(cache_dir, bin_dir, sentinel, cache_key):
             return
 
         # Seed all toolchain directories (bin/, lib/, avr/, libexec/, share/).
@@ -195,7 +202,7 @@ def _seed_cache(cache_dir: Path, bin_dir: Path, sentinel: Path) -> None:
                 if entry.is_file():
                     entry.chmod(entry.stat().st_mode | 0o111)
 
-        sentinel.write_text(version, encoding="utf-8")
+        sentinel.write_text(cache_key, encoding="utf-8")
 
 
 def _hardlink_or_copy_tree(src: Path, dst: Path) -> None:

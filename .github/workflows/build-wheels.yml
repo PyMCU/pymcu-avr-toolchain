@@ -200,6 +200,8 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+    outputs:
+      gcc_version: ${{ steps.gcc-ver.outputs.ver }}
     steps:
       - uses: actions/checkout@v4
 
@@ -267,6 +269,14 @@ jobs:
           done
           echo "x64 toolchain OK"
 
+      - name: Capture avr-gcc version
+        id: gcc-ver
+        shell: msys2 {0}
+        run: |
+          VER=$(win-x64-toolchain-staged/bin/avr-gcc.exe --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown")
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
+          echo "avr-gcc version: $VER"
+
       - name: Upload Windows x64 toolchain
         uses: actions/upload-artifact@v4
         with:
@@ -283,6 +293,8 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+    outputs:
+      gcc_version: ${{ steps.gcc-ver.outputs.ver }}
     steps:
       - uses: actions/checkout@v4
 
@@ -317,6 +329,13 @@ jobs:
         run: |
           macos-arm64-toolchain-staged/bin/avr-gcc --version
           macos-arm64-toolchain-staged/bin/avr-gcc -mmcu=atmega328p --print-libgcc-file-name
+
+      - name: Capture avr-gcc version
+        id: gcc-ver
+        run: |
+          VER=$(macos-arm64-toolchain-staged/bin/avr-gcc --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown")
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
+          echo "avr-gcc version: $VER"
 
       - name: Upload macOS arm64 toolchain
         uses: actions/upload-artifact@v4
@@ -377,6 +396,8 @@ jobs:
         env:
           AVRT_TOOLCHAIN_DIR: ${{ github.workspace }}/toolchain
           WHEEL_PLATFORM_TAG: manylinux_2_17_aarch64
+          # Binary is aarch64 and cannot run on this x86_64 runner; inject version.
+          AVRT_GCC_VERSION: "15.2.0"
         run: uv build --wheel python/
       - uses: actions/upload-artifact@v4
         with:
@@ -404,6 +425,8 @@ jobs:
         env:
           AVRT_TOOLCHAIN_DIR: ${{ github.workspace }}/toolchain
           WHEEL_PLATFORM_TAG: win_amd64
+          # .exe cannot run on this Linux runner; inject version from MSYS2 build.
+          AVRT_GCC_VERSION: ${{ needs.build-win-x64.outputs.gcc_version }}
         run: uv build --wheel python/
       - uses: actions/upload-artifact@v4
         with:
@@ -431,6 +454,8 @@ jobs:
         env:
           AVRT_TOOLCHAIN_DIR: ${{ github.workspace }}/toolchain
           WHEEL_PLATFORM_TAG: macosx_14_0_arm64
+          # Mach-O binary cannot run on this Linux runner; inject version from build job.
+          AVRT_GCC_VERSION: ${{ needs.build-macos-arm64.outputs.gcc_version }}
         run: uv build --wheel python/
       - uses: actions/upload-artifact@v4
         with:

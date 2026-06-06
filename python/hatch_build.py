@@ -132,16 +132,23 @@ def _validate_toolchain(bin_dir: Path) -> None:
 
 
 def _build_manifest(toolchain_dir: Path, bin_dir: Path, project_version: str) -> dict:
+    import re as _re
     plat_tag = os.environ.get("WHEEL_PLATFORM_TAG", "")
     exe = ".exe" if sys.platform == "win32" or plat_tag.startswith("win") else ""
-    gcc_version = _read_tool_version(bin_dir / f"avr-gcc{exe}", r"(\d+\.\d+\.\d+)")
+
+    # AVRT_GCC_VERSION lets CI inject the known version for cross-build steps
+    # (e.g. packaging a macOS Mach-O or aarch64 binary on an x86_64 Ubuntu runner
+    # where the binary cannot be executed for version detection).
+    gcc_version = os.environ.get("AVRT_GCC_VERSION", "")
+    if not gcc_version:
+        gcc_version = _read_tool_version(bin_dir / f"avr-gcc{exe}", r"(\d+\.\d+\.\d+)")
+    if not gcc_version or gcc_version == "unknown":
+        # Strip post/dev/pre suffixes to recover the underlying GCC version.
+        gcc_version = _re.sub(r"[._]?(post|dev|a|b|rc)\d+$", "", project_version)
+
     as_version = _read_tool_version(bin_dir / f"avr-as{exe}", r"(\d+\.\d+)")
     gdb_path = bin_dir / f"avr-gdb{exe}"
     gdb_version = _read_tool_version(gdb_path, r"(\d+\.\d+)") if gdb_path.exists() else "n/a"
-
-    # Fall back to the project version when binary detection fails (e.g. cross-build).
-    if gcc_version == "unknown":
-        gcc_version = project_version
 
     return {
         "gcc_version": gcc_version,

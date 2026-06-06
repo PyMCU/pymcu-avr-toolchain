@@ -461,6 +461,9 @@ jobs:
           path: dist/
           merge-multiple: true
 
+      - name: Sync README into python/ before sdist
+        run: cp README.md python/README.md
+
       - name: Build sdist (no binaries)
         run: uv build --sdist python/
 

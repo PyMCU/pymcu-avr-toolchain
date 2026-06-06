@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "pymcu-avr-toolchain"
 version = "15.2.0.post1"
 description = "Pre-built AVR-GCC 15.2.0 toolchain for PyMCU (avr-gcc, avr-as, avr-objcopy, avr-gdb, avr-libc)"
-readme = "../README.md"
+readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "GPL-3.0-or-later AND LGPL-3.0-or-later AND MIT AND BSD-2-Clause" }
 license-files = ["LICENSES/*", "NOTICE"]
@@ -57,5 +57,5 @@ include = [
     "hatch_build.py",
     "LICENSES/",
     "NOTICE",
-    "../README.md",
+    "README.md",
 ]

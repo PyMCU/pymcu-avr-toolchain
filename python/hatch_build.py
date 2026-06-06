@@ -37,7 +37,19 @@ class CustomBuildHook(BuildHookInterface):
     def initialize(self, version: str, build_data: dict) -> None:
         root = Path(self.root)
         project_version = version
-        toolchain_dir = _find_toolchain_dir(root)
+
+        try:
+            toolchain_dir = _find_toolchain_dir(root)
+        except FileNotFoundError:
+            # No toolchain available — produce a pure-Python stub wheel so
+            # `pip install pymcu-avr-toolchain` succeeds from the sdist on PyPI.
+            # The stub is usable: get_bin_dir() falls back to the shared cache
+            # (~/.pymcu/tools/) or PATH. Install a binary wheel from GitHub
+            # Releases to get the pre-built toolchain bundled.
+            self.app.display_info(
+                "[hatch-hook] No toolchain found — building pure-Python stub wheel."
+            )
+            return
 
         self.app.display_info(f"[hatch-hook] Using toolchain: {toolchain_dir}")
 

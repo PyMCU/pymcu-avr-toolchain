@@ -98,6 +98,100 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
+  # Linux arm64: same build script as x64 but on the ubuntu-24.04-arm runner.
+  # avr-gcc-build.sh compiles a cross-compiler (target=avr), so the host
+  # architecture only affects the produced binaries' native platform, not the
+  # AVR code they generate. Marked continue-on-error because the script has
+  # never been tested on an ARM64 host; if it breaks, the release still ships
+  # the other three platforms.
+  # ---------------------------------------------------------------------------
+  build-linux-arm64:
+    name: Build Linux arm64 toolchain
+    runs-on: ubuntu-24.04-arm
+    continue-on-error: true
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore source tarball cache
+        uses: actions/cache@v4
+        with:
+          path: tarball-cache/
+          key: avr-sources-arm64-v1-${{ hashFiles('avr-gcc-build.sh') }}
+          restore-keys: avr-sources-arm64-v1-
+
+      - name: Restore toolchain cache
+        id: toolchain-cache
+        uses: actions/cache@v4
+        with:
+          path: linux-arm64-toolchain-staged/
+          key: toolchain-linux-arm64-v1-${{ hashFiles('avr-gcc-build.sh') }}
+
+      - name: Set up wget cache wrapper
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p tarball-cache
+          mkdir -p /tmp/wget-wrap
+          cat > /tmp/wget-wrap/wget << 'WRAPPER'
+          #!/bin/bash
+          URL=""
+          for arg in "$@"; do
+            case "$arg" in http*|ftp*) URL="$arg" ;; esac
+          done
+          FILE="$(basename "$URL")"
+          CACHE_DIR="${GITHUB_WORKSPACE}/tarball-cache"
+          if [ -n "$FILE" ] && [ -f "$CACHE_DIR/$FILE" ]; then
+            echo "[wget-cache] Cache hit: $FILE"
+            cp "$CACHE_DIR/$FILE" "$FILE"
+          else
+            /usr/bin/wget "$@"
+            if [ -n "$FILE" ] && [ -f "$FILE" ]; then
+              cp "$FILE" "$CACHE_DIR/" 2>/dev/null || true
+            fi
+          fi
+          WRAPPER
+          chmod +x /tmp/wget-wrap/wget
+          echo "/tmp/wget-wrap" >> $GITHUB_PATH
+
+      - name: Install build dependencies
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            wget make gcc g++ bzip2 xz-utils autoconf texinfo \
+            libgmp-dev libmpfr-dev libexpat1-dev
+
+      - name: Build Linux arm64 AVR-GCC toolchain
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        env:
+          FOR_LINUX: "1"
+          FOR_WINX64: "0"
+          JOBCOUNT: "4"
+        run: bash avr-gcc-build.sh
+
+      - name: Stage Linux arm64 toolchain for upload
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        run: |
+          # Script may name the dir x64-linux or aarch64-linux depending on host;
+          # grab whichever linux dir exists.
+          LINUX_DIR=$(ls -d build/avr-gcc-*linux | head -1)
+          cp -r "$LINUX_DIR" linux-arm64-toolchain-staged
+
+      - name: Verify Linux arm64 toolchain
+        run: |
+          echo "Found: linux-arm64-toolchain-staged"
+          linux-arm64-toolchain-staged/bin/avr-gcc --version
+
+      - name: Upload Linux arm64 toolchain
+        uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-linux-arm64
+          path: linux-arm64-toolchain-staged/
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
   # Windows x64: install pre-built AVR toolchain via MSYS2 MINGW64 packages.
   # ---------------------------------------------------------------------------
   build-win-x64:
@@ -261,6 +355,34 @@ jobs:
           name: wheel-linux-x64
           path: python/dist/*.whl
 
+  package-linux-arm64:
+    name: Package Linux arm64 wheel
+    needs: build-linux-arm64
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: toolchain-linux-arm64
+          path: toolchain/
+      - name: Verify toolchain artifact
+        run: |
+          find toolchain/ -maxdepth 2 | head -20
+          test -d toolchain/bin || (echo "ERROR: toolchain/bin missing" && exit 1)
+      - uses: astral-sh/setup-uv@v6
+      - name: Build wheel
+        env:
+          AVRT_TOOLCHAIN_DIR: ${{ github.workspace }}/toolchain
+          WHEEL_PLATFORM_TAG: manylinux_2_17_aarch64
+        run: uv build --wheel python/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-linux-arm64
+          path: python/dist/*.whl
+
   package-win-x64:
     name: Package Windows x64 wheel
     needs: build-win-x64
@@ -322,6 +444,7 @@ jobs:
     name: Collect wheels and smoke test
     needs:
       - package-linux-x64
+      - package-linux-arm64
       - package-win-x64
       - package-macos-arm64
     runs-on: ubuntu-latest

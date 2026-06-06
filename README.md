@@ -58,9 +58,15 @@ pip install pymcu-compiler[avr]
 pip install pymcu-avr-toolchain
 ```
 
-Platform wheels are published for **Linux x86-64**, **macOS arm64**, and
-**Windows x86-64**. The wheels fit within PyPI's 100 MB limit and are
-distributed directly on PyPI (no split like the RP2040 toolchain).
+Platform wheels are published for **Linux x86-64**, **Linux arm64**,
+**macOS arm64**, and **Windows x86-64**. The wheels fit within PyPI's 100 MB
+limit and are distributed directly on PyPI (no split like the RP2040 toolchain).
+
+> **Linux arm64:** Built on GitHub's `ubuntu-24.04-arm` runner. The build
+> script (`avr-gcc-build.sh`) was designed for Linux x64; the arm64 build is
+> best-effort (`continue-on-error`) and may be absent from a release if the
+> runner has issues. Fall back to `apt install gcc-avr binutils-avr avr-libc`
+> in that case.
 
 > **macOS Intel (x86-64):** The `osx-cross/avr` Homebrew tap does not provide
 > x86-64 bottles for avr-gcc, so no Intel wheel is published. Intel Mac users
@@ -112,6 +118,8 @@ manifest: {
 3. The `build-wheels.yml` workflow fires automatically:
    - **Linux x64** — builds from source via `avr-gcc-build.sh` (~2 h);
      result is a fully static toolchain with no runtime dependencies.
+   - **Linux arm64** — same script on `ubuntu-24.04-arm`; best-effort
+     (`continue-on-error`), may be absent if the build fails.
    - **Windows x64** — installs pre-built MSYS2/MINGW64 packages
      (`mingw-w64-x86_64-avr-gcc`, `avr-libc`, `avr-binutils`).
    - **macOS arm64** — installs via Homebrew (`osx-cross/avr` tap) and

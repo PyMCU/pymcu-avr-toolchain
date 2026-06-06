@@ -504,12 +504,14 @@ jobs:
         run: ls -lh dist/
 
   # ---------------------------------------------------------------------------
-  # Publish binary wheels + sdist to PyPI via OIDC trusted publishing.
-  # AVR wheels are small enough (~30-50 MB) for PyPI's 100 MB limit.
+  # Publish pure-Python sdist stub to PyPI via OIDC trusted publishing.
+  # AVR toolchain wheels exceed PyPI's 100 MB limit (avr-gcc + avr-libc is
+  # ~150 MB per platform). Binary wheels go to GitHub Releases (see below);
+  # PyPI receives only the sdist stub for discoverability.
   # Fires ONLY on tag pushes (v*). workflow_dispatch never triggers this job.
   # ---------------------------------------------------------------------------
   publish-pypi:
-    name: Publish to PyPI
+    name: Publish stub to PyPI
     needs: collect-and-release
     runs-on: ubuntu-latest
     environment: release
@@ -517,13 +519,6 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - name: Download all wheels
-        uses: actions/download-artifact@v4
-        with:
-          pattern: wheel-*
-          path: dist/
-          merge-multiple: true
-
       - name: Download sdist
         uses: actions/download-artifact@v4
         with:
@@ -532,8 +527,8 @@ jobs:
 
       - uses: astral-sh/setup-uv@v6
 
-      - name: Publish to PyPI
-        run: uv publish dist/*
+      - name: Publish stub to PyPI
+        run: uv publish dist/*.tar.gz
 
   # ---------------------------------------------------------------------------
   # Create GitHub Release and attach all wheels + SHA256SUMS as assets.

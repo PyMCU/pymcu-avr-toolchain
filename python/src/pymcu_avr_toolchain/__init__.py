@@ -79,9 +79,10 @@ def get_bin_dir() -> Path:
         bin_dir = _PKG_DIR / "bin"
         if not bin_dir.is_dir():
             raise RuntimeError(
-                "pymcu-avr-toolchain: bin/ not found in package directory.\n"
-                "This package was installed from an sdist (no binaries). "
-                "Install the platform-specific wheel instead."
+                "pymcu-avr-toolchain: bin/ not found in package directory "
+                "and PYMCU_TOOLCHAIN_NO_SEEDING=1 prevents automatic download.\n"
+                "Either install the binary wheel from GitHub Releases or unset "
+                "PYMCU_TOOLCHAIN_NO_SEEDING to allow auto-download."
             )
         return bin_dir
 
@@ -177,14 +178,15 @@ def _cache_is_complete(
 
 
 def _seed_cache(cache_dir: Path, bin_dir: Path, sentinel: Path, cache_key: str) -> None:
-    if not (_PKG_DIR / "bin").is_dir():
-        raise RuntimeError(
-            "pymcu-avr-toolchain: no binaries found in package.\n"
-            "Install the platform-specific wheel (not the sdist)."
-        )
-
     with _seed_lock(cache_dir):
         if _cache_is_complete(cache_dir, bin_dir, sentinel, cache_key):
+            return
+
+        if not (_PKG_DIR / "bin").is_dir():
+            # No binaries bundled — sdist / stub install from PyPI.
+            # Download the binary wheel from the GitHub Release automatically.
+            from ._fetch import fetch_to_cache  # noqa: PLC0415
+            fetch_to_cache(cache_dir, bin_dir, sentinel, cache_key)
             return
 
         # Seed all toolchain directories (bin/, lib/, avr/, libexec/, share/).

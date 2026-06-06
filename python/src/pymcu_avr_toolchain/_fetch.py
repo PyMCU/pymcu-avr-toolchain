@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import os
 import platform
+import ssl
 import sys
 import tempfile
 import urllib.request
@@ -86,20 +87,64 @@ def _log(msg: str) -> None:
     print(msg, flush=True)
 
 
+def _ssl_context() -> ssl.SSLContext:
+    """
+    Return an SSL context with working CA certificates.
+
+    Python builds from python.org on macOS use a bundled OpenSSL that does not
+    read the system keychain automatically.  We supplement the default context
+    with known system CA bundle paths so HTTPS to GitHub works out of the box.
+    """
+    ctx = ssl.create_default_context()
+    _CA_CANDIDATES = [
+        os.environ.get("SSL_CERT_FILE", ""),
+        "/etc/ssl/cert.pem",                        # macOS system bundle
+        "/etc/ssl/certs/ca-certificates.crt",        # Debian/Ubuntu
+        "/etc/pki/tls/certs/ca-bundle.crt",          # RHEL/CentOS/Fedora
+        "/usr/local/etc/openssl/cert.pem",            # Homebrew OpenSSL
+    ]
+    for cafile in _CA_CANDIDATES:
+        if cafile and os.path.isfile(cafile):
+            try:
+                ctx.load_verify_locations(cafile=cafile)
+                return ctx
+            except ssl.SSLError:
+                continue
+    # certifi as last resort (common transitive dependency)
+    try:
+        import certifi  # noqa: PLC0415
+        ctx.load_verify_locations(cafile=certifi.where())
+    except (ImportError, ssl.SSLError):
+        pass
+    return ctx
+
+
 def _download(url: str, dest: Path) -> None:
     """Download *url* to *dest* with a simple progress indicator."""
-    def _reporthook(count: int, block_size: int, total: int) -> None:
-        if total > 0 and count % 50 == 0:
-            pct = min(100, count * block_size * 100 // total)
-            _log(f"  ... {pct}%")
-
+    ctx = _ssl_context()
+    req = urllib.request.Request(url, headers={"User-Agent": "pymcu-avr-toolchain/1.0"})
     try:
-        urllib.request.urlretrieve(url, dest, reporthook=_reporthook)
+        with urllib.request.urlopen(req, context=ctx) as resp:
+            total = int(resp.headers.get("Content-Length", 0) or 0)
+            downloaded = 0
+            report_every = max(1 << 20, total // 20)  # ~5% steps
+            next_report = report_every
+            with open(dest, "wb") as fh:
+                while True:
+                    chunk = resp.read(1 << 16)
+                    if not chunk:
+                        break
+                    fh.write(chunk)
+                    downloaded += len(chunk)
+                    if total and downloaded >= next_report:
+                        pct = min(100, downloaded * 100 // total)
+                        _log(f"  ... {pct}%")
+                        next_report += report_every
     except urllib.error.HTTPError as exc:
         raise RuntimeError(
             f"pymcu-avr-toolchain: HTTP {exc.code} downloading wheel.\n"
             f"URL: {url}\n"
-            f"Check that the release v{_pkg_version_from_env()} exists on:\n"
+            f"Check that release v{_pkg_version_from_env()} exists on:\n"
             f"  https://github.com/{_REPO}/releases"
         ) from exc
     except Exception as exc:

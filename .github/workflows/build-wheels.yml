@@ -99,8 +99,6 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Windows x64: install pre-built AVR toolchain via MSYS2 MINGW64 packages.
-  # Using pre-built packages mirrors the macOS Homebrew approach and avoids
-  # the multi-hour from-source GCC build that reliably OOMs on the runner.
   # ---------------------------------------------------------------------------
   build-win-x64:
     name: Build Windows x64 toolchain
@@ -170,7 +168,6 @@ jobs:
       - name: Verify x64 toolchain
         shell: msys2 {0}
         run: |
-          # Check the three binaries required by hatch_build.py (_REQUIRED_BINS).
           for bin in avr-gcc.exe avr-as.exe avr-objcopy.exe; do
             test -f win-x64-toolchain-staged/bin/$bin || (echo "MISSING: $bin" && exit 1)
           done
@@ -185,12 +182,6 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # macOS arm64 — extract from Homebrew + bundle dylibs for portability.
-  # avr-gcc-build.sh does not support macOS (designed for Linux/MinGW only).
-  # Homebrew provides avr-gcc and avr-binutils as native arm64 packages.
-  # scripts/bundle-macos-toolchain.sh assembles the staged directory and
-  # rewrites all dylib references from absolute Homebrew paths to @rpath so
-  # the wheel works without Homebrew installed on the target machine.
-  # Cache keyed on avr-gcc formula version; re-runs when Homebrew updates it.
   # ---------------------------------------------------------------------------
   build-macos-arm64:
     name: Build macOS arm64 toolchain (Homebrew)
@@ -202,9 +193,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Add osx-cross/avr tap
-        run: |
-          # avr-gcc is not in homebrew-core; it lives in the osx-cross/avr tap.
-          brew tap osx-cross/avr
+        run: brew tap osx-cross/avr
 
       - name: Query avr-gcc formula version
         id: avrgcc-ver
@@ -244,12 +233,6 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Package wheels (one job per platform, all run in parallel)
-  #
-  # NOTE: macOS x86_64 (Intel) wheel is intentionally omitted. The osx-cross/avr
-  # tap does not provide x86_64 bottles for avr-gcc or avr-binutils, so building
-  # from source (~60-90 min) would always exceed any practical CI timeout. Intel
-  # Mac users can install avr-gcc via Homebrew (`brew tap osx-cross/avr && brew
-  # install avr-gcc`) and pymcu will detect it automatically via PATH.
   # ---------------------------------------------------------------------------
   package-linux-x64:
     name: Package Linux x64 wheel
@@ -265,7 +248,6 @@ jobs:
           path: toolchain/
       - name: Verify toolchain artifact
         run: |
-          echo "Contents of toolchain/:"
           find toolchain/ -maxdepth 2 | head -20
           test -d toolchain/bin || (echo "ERROR: toolchain/bin missing" && exit 1)
       - uses: astral-sh/setup-uv@v6
@@ -293,7 +275,6 @@ jobs:
           path: toolchain/
       - name: Verify toolchain artifact
         run: |
-          echo "Contents of toolchain/:"
           find toolchain/ -maxdepth 2 | head -20
           test -d toolchain/bin || (echo "ERROR: toolchain/bin missing" && exit 1)
       - uses: astral-sh/setup-uv@v6
@@ -321,7 +302,6 @@ jobs:
           path: toolchain/
       - name: Verify toolchain artifact
         run: |
-          echo "Contents of toolchain/:"
           find toolchain/ -maxdepth 2 | head -20
           test -d toolchain/bin || (echo "ERROR: toolchain/bin missing" && exit 1)
       - uses: astral-sh/setup-uv@v6
@@ -336,21 +316,19 @@ jobs:
           path: python/dist/*.whl
 
   # ---------------------------------------------------------------------------
-  # Collect, build sdist, smoke-test, and release
+  # Collect, build sdist, smoke-test, checksums.
   # ---------------------------------------------------------------------------
   collect-and-release:
-    name: Collect wheels and create release
+    name: Collect wheels and smoke test
     needs:
       - package-linux-x64
       - package-win-x64
       - package-macos-arm64
     runs-on: ubuntu-latest
     permissions:
-      # NOTE: Change to 'contents: write' when re-enabling GitHub Release creation.
       contents: read
     steps:
       - uses: actions/checkout@v4
-
       - uses: astral-sh/setup-uv@v6
 
       - name: Download all wheels
@@ -366,7 +344,7 @@ jobs:
       - name: Move sdist to dist/
         run: mv python/dist/*.tar.gz dist/
 
-      - name: Upload sdist
+      - name: Upload sdist artifact
         uses: actions/upload-artifact@v4
         with:
           name: dist-sdist
@@ -392,26 +370,27 @@ jobs:
           sha256sum *.whl *.tar.gz > SHA256SUMS
           cat SHA256SUMS
 
+      - name: Upload SHA256SUMS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sha256sums
+          path: dist/SHA256SUMS
+          retention-days: 1
+
       - name: List artifacts
         run: ls -lh dist/
 
-      # GitHub Release and public PyPI publishing are intentionally disabled.
-      # Enable once the package is ready for public distribution.
-      # - name: Create GitHub Release
-      #   if: startsWith(github.ref, 'refs/tags/') || inputs.create_release
-      #   uses: softprops/action-gh-release@v2
-      #   with:
-      #     files: dist/*
-
   # ---------------------------------------------------------------------------
-  # Publish to public PyPI (only on tag or release)
+  # Publish binary wheels + sdist to PyPI via OIDC trusted publishing.
+  # AVR wheels are small enough (~30-50 MB) for PyPI's 100 MB limit.
+  # Fires ONLY on tag pushes (v*). workflow_dispatch never triggers this job.
   # ---------------------------------------------------------------------------
   publish-pypi:
     name: Publish to PyPI
     needs: collect-and-release
     runs-on: ubuntu-latest
     environment: release
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       id-token: write
     steps:
@@ -434,15 +413,16 @@ jobs:
         run: uv publish dist/*
 
   # ---------------------------------------------------------------------------
-  # Publish to private PyPI index via headscale
+  # Create GitHub Release and attach all wheels + SHA256SUMS as assets.
+  # Fires ONLY on tag pushes (v*). workflow_dispatch never triggers this job.
   # ---------------------------------------------------------------------------
-  publish-private:
-    name: Publish to private PyPI
+  publish-github-release:
+    name: Publish to GitHub Releases
     needs: collect-and-release
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
-      contents: read
+      contents: write
     steps:
       - name: Download all wheels
         uses: actions/download-artifact@v4
@@ -451,19 +431,25 @@ jobs:
           path: dist/
           merge-multiple: true
 
-      - name: Connect to headscale network
-        uses: tailscale/github-action@v4
+      - name: Download SHA256SUMS
+        uses: actions/download-artifact@v4
         with:
-          authkey: ${{ secrets.HEADSCALE_AUTH_KEY }}
-          args: --login-server ${{ secrets.HEADSCALE_URL }}
+          name: sha256sums
+          path: dist/
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v6
-
-      - name: Publish to private registry (Gitea)
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
         run: |
-          uv publish \
-            --publish-url "${{ secrets.PRIVATE_PYPI_URL }}" \
-            --username "${{ secrets.PRIVATE_PYPI_USERNAME }}" \
-            --password "${{ secrets.PRIVATE_PYPI_TOKEN }}" \
-            dist/*
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release $TAG already exists — uploading assets."
+            gh release upload "$TAG" dist/*.whl dist/SHA256SUMS \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "pymcu-avr-toolchain ${TAG}" \
+              --generate-notes \
+              dist/*.whl dist/SHA256SUMS
+          fi

@@ -16,7 +16,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build-linux-x64:
     name: Build Linux x64 toolchain
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04  # pin to 22.04 (glibc 2.35) so the binary runs on any distro with glibc >= 2.35
     timeout-minutes: 180
     permissions:
       contents: read

@@ -363,6 +363,8 @@ jobs:
         run: |
           find toolchain/ -maxdepth 2 | head -20
           test -d toolchain/bin || (echo "ERROR: toolchain/bin missing" && exit 1)
+      - name: Restore execute permissions (ZIP artifact strips them)
+        run: find toolchain/bin toolchain/libexec -type f -exec chmod +x {} \; 2>/dev/null || true
       - uses: astral-sh/setup-uv@v6
       - name: Build wheel
         env:

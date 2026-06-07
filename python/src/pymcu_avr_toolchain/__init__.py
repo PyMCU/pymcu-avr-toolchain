@@ -200,9 +200,24 @@ def _seed_cache(cache_dir: Path, bin_dir: Path, sentinel: Path, cache_key: str) 
                 _hardlink_or_copy_tree(item, dst)
 
         if sys.platform != "win32":
-            for entry in bin_dir.iterdir():
-                if entry.is_file():
-                    entry.chmod(entry.stat().st_mode | 0o111)
+            # Set execute permission on all binaries. GitHub Actions artifact upload
+            # uses ZIP which strips Unix execute bits; we restore them here for
+            # bin/ and libexec/ (cc1, collect2, etc.).
+            for search_dir in (bin_dir, cache_dir / "libexec"):
+                if not search_dir.is_dir():
+                    continue
+                for entry in search_dir.rglob("*"):
+                    if entry.is_file() and not entry.is_symlink():
+                        with contextlib.suppress(OSError):
+                            entry.chmod(entry.stat().st_mode | 0o111)
+
+        # GCC 15.x's collect2 calls plain 'ld' (not 'avr-ld'). Create a symlink
+        # so the toolchain bin/ld resolves correctly when bin/ is on PATH.
+        _ld = bin_dir / "ld"
+        _avr_ld = bin_dir / "avr-ld"
+        if not _ld.exists() and _avr_ld.exists() and sys.platform != "win32":
+            with contextlib.suppress(OSError):
+                _ld.symlink_to("avr-ld")
 
         sentinel.write_text(cache_key, encoding="utf-8")
 

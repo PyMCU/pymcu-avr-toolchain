@@ -1,0 +1,66 @@
+name: Toolchain smoke test
+
+# Validates that the published pymcu-avr-toolchain wheel works correctly
+# on all target platforms. Runs after every GitHub Release is published
+# (which means after build-wheels.yml completes and attaches the wheels).
+#
+# Also runs on pushes to master that touch the Python package or tests,
+# to catch regressions before releasing.
+
+on:
+  release:
+    types: [published]
+  push:
+    branches: [master]
+    paths:
+      - "python/**"
+      - ".github/workflows/smoke-test.yml"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "pymcu-avr-toolchain version to test (default: latest)"
+        required: false
+        default: ""
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  smoke:
+    name: Smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pymcu-avr-toolchain (PyPI sdist + auto-download wheel)
+        run: |
+          uv venv .venv
+          uv pip install --python .venv pymcu-avr-toolchain pytest
+
+      - name: Pre-seed toolchain (triggers download + chmod + symlinks)
+        shell: bash
+        run: |
+          uv run --python .venv python -c "
+          import pymcu_avr_toolchain
+          d = pymcu_avr_toolchain.get_bin_dir()
+          print(f'bin_dir: {d}')
+          "
+
+      - name: Run smoke tests
+        run: uv run --python .venv pytest python/tests/ -v --tb=short

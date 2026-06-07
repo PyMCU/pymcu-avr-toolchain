@@ -25,6 +25,7 @@ PYMCU_SKIP_HASH_CHECK=1
 
 from __future__ import annotations
 
+import contextlib
 import os
 import platform
 import ssl
@@ -234,9 +235,32 @@ def fetch_to_cache(
         )
 
     if sys.platform != "win32":
-        for entry in bin_dir.iterdir():
-            if entry.is_file():
-                entry.chmod(entry.stat().st_mode | 0o111)
+        # Restore execute bits. GitHub Actions artifact upload uses ZIP which
+        # strips them; the downloaded wheel inherits this defect for bin/ and
+        # libexec/ (cc1, collect2, lto1, ...).
+        for search_dir in (bin_dir, cache_dir / "libexec"):
+            if not search_dir.is_dir():
+                continue
+            for entry in search_dir.rglob("*"):
+                if entry.is_file() and not entry.is_symlink():
+                    with contextlib.suppress(OSError):
+                        entry.chmod(entry.stat().st_mode | 0o111)
+
+        # avr-gcc 15.x looks for 'as' and 'ld' (no avr- prefix) in
+        # COMPILER_PATH (avr/bin/) then PATH. Create the un-prefixed symlinks
+        # so the wheel tools are found instead of the system x86_64 ones.
+        avr_bin = cache_dir / "avr" / "bin"
+        for sym_name, target in (("as", "avr-as"), ("ld", "avr-ld")):
+            sym = bin_dir / sym_name
+            if not sym.exists() and (bin_dir / target).exists():
+                import contextlib  # noqa: PLC0415
+                with contextlib.suppress(OSError):
+                    sym.symlink_to(target)
+            if avr_bin.is_dir():
+                avr_sym = avr_bin / sym_name
+                if not avr_sym.exists() and (bin_dir / target).exists():
+                    with contextlib.suppress(OSError):
+                        avr_sym.symlink_to(f"../../bin/{target}")
 
     sentinel.write_text(cache_key, encoding="utf-8")
     log(f"[pymcu-avr-toolchain] Toolchain ready at: {bin_dir}")

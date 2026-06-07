@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+    # Push to master warms the Linux x64 toolchain cache so that tag-triggered
+    # builds can reuse it. GitHub Actions caches from refs/tags/* are NOT
+    # accessible from other tag refs; only caches from refs/heads/master are
+    # available to all tag-triggered runs in this repo.
+    branches:
+      - master
   workflow_dispatch:
 
 env:
@@ -345,11 +351,14 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # Package wheels (one job per platform, all run in parallel)
+  # Package wheels (one job per platform, all run in parallel).
+  # Packaging only runs on tag pushes; master pushes only warm the toolchain
+  # build cache and skip everything below.
   # ---------------------------------------------------------------------------
   package-linux-x64:
     name: Package Linux x64 wheel
     needs: build-linux-x64
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -379,6 +388,7 @@ jobs:
   package-linux-arm64:
     name: Package Linux arm64 wheel
     needs: build-linux-arm64
+    if: startsWith(github.ref, 'refs/tags/v')
     continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
@@ -411,6 +421,7 @@ jobs:
   package-win-x64:
     name: Package Windows x64 wheel
     needs: build-win-x64
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -440,6 +451,7 @@ jobs:
   package-macos-arm64:
     name: Package macOS arm64 wheel
     needs: build-macos-arm64
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: read

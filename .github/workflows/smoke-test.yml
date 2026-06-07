@@ -57,10 +57,36 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Resolve target version
+        id: version
+        shell: bash
+        run: |
+          # For workflow_run, pin to the exact tag that triggered the build so
+          # we don't race PyPI CDN propagation. head_branch is the tag name.
+          TAG="${{ github.event.workflow_run.head_branch }}"
+          if [[ "$TAG" =~ ^v(.+)$ ]]; then
+            echo "pin=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "pin=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install pymcu-avr-toolchain (PyPI sdist + auto-download wheel)
+        shell: bash
         run: |
           uv venv .venv
-          uv pip install --python .venv pymcu-avr-toolchain pytest
+          PIN="${{ steps.version.outputs.pin }}"
+          if [ -n "$PIN" ]; then
+            SPEC="pymcu-avr-toolchain==$PIN"
+          else
+            SPEC="pymcu-avr-toolchain"
+          fi
+          echo "Installing: $SPEC"
+          # Retry up to 3 times to handle transient PyPI propagation delays
+          for i in 1 2 3; do
+            uv pip install --python .venv "$SPEC" pytest && break
+            echo "Attempt $i failed — waiting 30s for PyPI to propagate..."
+            sleep 30
+          done
           uv run --python .venv python -c "
           from importlib.metadata import version
           print('Installed version:', version('pymcu-avr-toolchain'))

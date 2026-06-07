@@ -211,13 +211,21 @@ def _seed_cache(cache_dir: Path, bin_dir: Path, sentinel: Path, cache_key: str) 
                         with contextlib.suppress(OSError):
                             entry.chmod(entry.stat().st_mode | 0o111)
 
-        # GCC 15.x's collect2 calls plain 'ld' (not 'avr-ld'). Create a symlink
-        # so the toolchain bin/ld resolves correctly when bin/ is on PATH.
-        _ld = bin_dir / "ld"
-        _avr_ld = bin_dir / "avr-ld"
-        if not _ld.exists() and _avr_ld.exists() and sys.platform != "win32":
-            with contextlib.suppress(OSError):
-                _ld.symlink_to("avr-ld")
+        if sys.platform != "win32":
+            # GCC 15.x calls 'as' and 'ld' (not 'avr-as'/'avr-ld') from COMPILER_PATH
+            # then PATH. Create un-prefixed symlinks in bin/ (PATH fallback) and
+            # avr/bin/ (COMPILER_PATH hit) so the right tools are found.
+            avr_bin = cache_dir / "avr" / "bin"
+            for sym_name, target in (("as", "avr-as"), ("ld", "avr-ld")):
+                sym = bin_dir / sym_name
+                if not sym.exists() and (bin_dir / target).exists():
+                    with contextlib.suppress(OSError):
+                        sym.symlink_to(target)
+                if avr_bin.is_dir():
+                    avr_sym = avr_bin / sym_name
+                    if not avr_sym.exists() and (bin_dir / target).exists():
+                        with contextlib.suppress(OSError):
+                            avr_sym.symlink_to(f"../../bin/{target}")
 
         sentinel.write_text(cache_key, encoding="utf-8")
 

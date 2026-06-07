@@ -231,7 +231,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: win-x64-toolchain-staged/
-          key: toolchain-win-x64-v3-${{ steps.pkg-ver.outputs.ver }}
+          key: toolchain-win-x64-v4-${{ steps.pkg-ver.outputs.ver }}
 
       - name: Install AVR toolchain packages
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
@@ -280,6 +280,21 @@ jobs:
             mkdir -p win-x64-toolchain-staged/libexec/gcc
             cp -r "$LIBEXEC" win-x64-toolchain-staged/libexec/gcc/avr
           fi
+          # Copy MINGW64 runtime DLLs so the wheel is self-contained.
+          # avr-gcc.exe (MINGW64 build) needs these DLLs at runtime; without
+          # them the exe fails with exit 127 on machines without MSYS2 installed,
+          # or on cache-hit CI runs where the MINGW64 packages are not installed.
+          echo "Copying MINGW64 runtime DLLs..."
+          ldd "$BIN_DIR/avr-gcc.exe" \
+            | grep -i '/mingw64/bin/' \
+            | sed 's|.*=> \(/mingw64/bin/[^ ]*\).*|\1|' \
+            | while read dll_path; do
+              dll_name="$(basename "$dll_path")"
+              if [ -f "$dll_path" ]; then
+                cp "$dll_path" win-x64-toolchain-staged/bin/
+                echo "  Copied DLL: $dll_name"
+              fi
+            done
 
       - name: Verify x64 toolchain
         shell: msys2 {0}

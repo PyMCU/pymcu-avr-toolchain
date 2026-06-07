@@ -1,8 +1,8 @@
 name: Toolchain smoke test
 
-# Validates that the published pymcu-avr-toolchain wheel works correctly
-# on all target platforms. Installs the binary wheel directly from GitHub
-# Releases so the full supply-chain pipeline tests have real tools.
+# Validates that the published pymcu-avr-toolchain stub works correctly
+# on all target platforms: install from PyPI, let get_bin_dir() auto-download
+# the binary wheel from GitHub Releases, run the full pipeline tests.
 #
 # NOTE: `release: published` does NOT work when the release is created by a
 # workflow using GITHUB_TOKEN. Use `workflow_run` after build-wheels.yml.
@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version tag to test (e.g. v15.2.0.post15, default: latest release)"
+        description: "Version to test (e.g. 15.2.0.post15, default: latest)"
         required: false
         default: ""
 
@@ -31,7 +31,6 @@ jobs:
   smoke:
     name: Smoke (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
-    # For workflow_run: only run after a tag-triggered successful build
     if: >
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'push' ||
@@ -44,16 +43,12 @@ jobs:
         include:
           - name: linux-x64
             os: ubuntu-latest
-            wheel_tag: manylinux_2_17_x86_64
           - name: linux-arm64
             os: ubuntu-24.04-arm
-            wheel_tag: manylinux_2_17_aarch64
           - name: macos-arm64
             os: macos-latest
-            wheel_tag: macosx_14_0_arm64
           - name: windows-x64
             os: windows-latest
-            wheel_tag: win_amd64
     permissions:
       contents: read
 
@@ -71,51 +66,43 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Resolve release tag
-        id: tag
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          EXPLICIT="${{ github.event.inputs.version }}"
-          RUN_BRANCH="${{ github.event.workflow_run.head_branch }}"
-          if [[ -n "$EXPLICIT" ]]; then
-            TAG="$EXPLICIT"
-          elif [[ "$RUN_BRANCH" =~ ^v ]]; then
-            TAG="$RUN_BRANCH"
-          else
-            TAG=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Resolved release tag: $TAG"
+      - name: Wait for PyPI propagation
+        if: github.event_name == 'workflow_run'
+        run: sleep 240
 
-      - name: Install binary wheel from GitHub Releases
+      - name: Resolve target version
+        id: version
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
-          VER="${TAG#v}"
-          REPO="$GITHUB_REPOSITORY"
-          WHEEL_TAG="${{ matrix.wheel_tag }}"
-          WHEEL="pymcu_avr_toolchain-${VER}-py3-none-${WHEEL_TAG}.whl"
-          URL="https://github.com/${REPO}/releases/download/${TAG}/${WHEEL}"
-          echo "Installing: $URL"
+          TAG="${{ github.event.workflow_run.head_branch }}"
+          if [[ "$TAG" =~ ^v(.+)$ ]]; then
+            echo "pin=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "pin=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install pymcu-avr-toolchain from PyPI
+        shell: bash
+        run: |
           uv venv .venv
-          uv pip install --python .venv "$URL" pytest
+          PIN="${{ steps.version.outputs.pin }}"
+          if [ -n "$PIN" ]; then
+            SPEC="pymcu-avr-toolchain==$PIN"
+          else
+            SPEC="pymcu-avr-toolchain"
+          fi
+          echo "Installing: $SPEC"
+          for i in 1 2 3; do
+            uv pip install --python .venv "$SPEC" pytest && break
+            echo "Attempt $i failed — waiting 30s..."
+            sleep 30
+          done
           uv run --python .venv python -c "
           from importlib.metadata import version
-          print('Installed:', version('pymcu-avr-toolchain'))
-          "
-
-      - name: Seed toolchain cache (chmod + symlinks)
-        shell: bash
-        run: |
-          uv run --python .venv python -c "
-          import pymcu_avr_toolchain
-          d = pymcu_avr_toolchain.get_bin_dir()
-          print(f'bin_dir: {d}')
+          print('Installed version:', version('pymcu-avr-toolchain'))
           "
 
       - name: Run smoke tests
+        # get_bin_dir() in the test module guard triggers auto-download from
+        # GitHub Releases when no binaries are bundled (stub/sdist install).
         run: uv run --python .venv pytest python/tests/ -v --tb=short

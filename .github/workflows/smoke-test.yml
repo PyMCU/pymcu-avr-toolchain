@@ -1,20 +1,18 @@
 name: Toolchain smoke test
 
 # Validates that the published pymcu-avr-toolchain wheel works correctly
-# on all target platforms. Runs after every GitHub Release is published
-# (which means after build-wheels.yml completes and attaches the wheels).
+# on all target platforms.
 #
-# Also runs on pushes to master that touch the Python package or tests,
-# to catch regressions before releasing.
+# NOTE: `release: published` does NOT work when the release is created by a
+# workflow using GITHUB_TOKEN (GitHub blocks recursive workflow triggering).
+# Instead, we trigger via `workflow_run` after build-wheels.yml completes.
 
 on:
-  release:
-    types: [published]
-  push:
-    branches: [master]
-    paths:
-      - "python/**"
-      - ".github/workflows/smoke-test.yml"
+  # Runs after the wheel-build workflow succeeds (tag-triggered builds only).
+  workflow_run:
+    workflows: ["Build pymcu-avr-toolchain wheels"]
+    types: [completed]
+  # Also runs manually for ad-hoc validation.
   workflow_dispatch:
     inputs:
       version:
@@ -29,6 +27,13 @@ jobs:
   smoke:
     name: Smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # For workflow_run: only run when the upstream workflow succeeded AND
+    # was triggered by a tag push (not a master cache-warming push).
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
     strategy:
       fail-fast: false
       matrix:

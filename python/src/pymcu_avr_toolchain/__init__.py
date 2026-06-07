@@ -45,7 +45,6 @@ PYMCU_TOOLS_DIR
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import json
 import os
 import platform
@@ -250,6 +249,7 @@ def _seed_lock(cache_dir: Path):
     if sys.platform == "win32":
         yield
         return
+    import fcntl  # noqa: PLC0415 — POSIX only; not available on Windows
     lock_path = cache_dir.parent / ".seed.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     fh = open(lock_path, "w")

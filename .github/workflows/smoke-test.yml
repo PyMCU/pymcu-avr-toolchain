@@ -47,6 +47,10 @@ jobs:
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
+        with:
+          # Disable uv's package cache so we always install the freshly published
+          # version from PyPI, not a stale cached copy from a previous CI run.
+          enable-cache: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -57,6 +61,10 @@ jobs:
         run: |
           uv venv .venv
           uv pip install --python .venv pymcu-avr-toolchain pytest
+          uv run --python .venv python -c "
+          from importlib.metadata import version
+          print('Installed version:', version('pymcu-avr-toolchain'))
+          "
 
       - name: Pre-seed toolchain (triggers download + chmod + symlinks)
         shell: bash

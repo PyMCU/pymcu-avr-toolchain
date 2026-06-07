@@ -253,7 +253,6 @@ def fetch_to_cache(
         for sym_name, target in (("as", "avr-as"), ("ld", "avr-ld")):
             sym = bin_dir / sym_name
             if not sym.exists() and (bin_dir / target).exists():
-                import contextlib  # noqa: PLC0415
                 with contextlib.suppress(OSError):
                     sym.symlink_to(target)
             if avr_bin.is_dir():

@@ -231,7 +231,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: win-x64-toolchain-staged/
-          key: toolchain-win-x64-v1-${{ steps.pkg-ver.outputs.ver }}
+          key: toolchain-win-x64-v2-${{ steps.pkg-ver.outputs.ver }}
 
       - name: Install AVR toolchain packages
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
@@ -266,6 +266,13 @@ jobs:
           if [ -d "$SYSROOT" ]; then
             cp -r "$SYSROOT" win-x64-toolchain-staged/avr
           fi
+          # Copy GCC lib dir: device-specs/ and libgcc.a are required for
+          # -mmcu=<chip> to work (--print-libgcc-file-name / linking).
+          GCC_LIB=/mingw64/lib/gcc/avr
+          if [ -d "$GCC_LIB" ]; then
+            mkdir -p win-x64-toolchain-staged/lib/gcc
+            cp -r "$GCC_LIB" win-x64-toolchain-staged/lib/gcc/avr
+          fi
 
       - name: Verify x64 toolchain
         shell: msys2 {0}
@@ -274,6 +281,8 @@ jobs:
             test -f win-x64-toolchain-staged/bin/$bin || (echo "MISSING: $bin" && exit 1)
           done
           echo "x64 toolchain OK"
+          # Verify device specs work
+          win-x64-toolchain-staged/bin/avr-gcc.exe -mmcu=atmega328p --print-libgcc-file-name
 
       - name: Capture avr-gcc version
         id: gcc-ver

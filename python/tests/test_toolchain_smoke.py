@@ -193,7 +193,9 @@ class TestToolExecution:
             "--print-libgcc-file-name",
         )
         assert r.returncode == 0, (
-            "Device-specs lookup failed — glibc mismatch or missing device-specs?\n"
+            "atmega328p device-specs lookup failed.\n"
+            "Possible causes: missing lib/gcc/avr/device-specs/, "
+            "glibc mismatch (Linux), wrong toolchain layout.\n"
             + r.stderr.decode()
         )
         assert "libgcc" in r.stdout.decode(), f"unexpected output: {r.stdout.decode()!r}"

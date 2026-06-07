@@ -231,7 +231,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: win-x64-toolchain-staged/
-          key: toolchain-win-x64-v2-${{ steps.pkg-ver.outputs.ver }}
+          key: toolchain-win-x64-v3-${{ steps.pkg-ver.outputs.ver }}
 
       - name: Install AVR toolchain packages
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
@@ -272,6 +272,13 @@ jobs:
           if [ -d "$GCC_LIB" ]; then
             mkdir -p win-x64-toolchain-staged/lib/gcc
             cp -r "$GCC_LIB" win-x64-toolchain-staged/lib/gcc/avr
+          fi
+          # Copy libexec dir: cc1.exe (C compiler frontend) is required for
+          # avr-gcc to compile .c files (avr-gcc delegates to cc1 via libexec).
+          LIBEXEC=/mingw64/libexec/gcc/avr
+          if [ -d "$LIBEXEC" ]; then
+            mkdir -p win-x64-toolchain-staged/libexec/gcc
+            cp -r "$LIBEXEC" win-x64-toolchain-staged/libexec/gcc/avr
           fi
 
       - name: Verify x64 toolchain

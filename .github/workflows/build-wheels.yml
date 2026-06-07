@@ -35,7 +35,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: linux-toolchain-staged/
-          key: toolchain-linux-x64-v1-${{ hashFiles('avr-gcc-build.sh') }}
+          key: toolchain-linux-x64-v2-${{ hashFiles('avr-gcc-build.sh') }}
 
       - name: Set up wget cache wrapper
         if: steps.toolchain-cache.outputs.cache-hit != 'true'

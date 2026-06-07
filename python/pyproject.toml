@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pymcu-avr-toolchain"
-version = "15.2.0.post8"
+version = "15.2.0.post9"
 description = "Pre-built AVR-GCC 15.2.0 toolchain for PyMCU (avr-gcc, avr-as, avr-objcopy, avr-gdb, avr-libc)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -60,3 +60,6 @@ include = [
     "NOTICE",
     "README.md",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

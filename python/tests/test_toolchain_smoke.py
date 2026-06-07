@@ -124,13 +124,22 @@ class TestBinaryPresence:
         libexec = BIN_DIR.parent / "libexec"
         if not libexec.is_dir():
             pytest.skip("no libexec/ in this wheel build")
+        # Only check ELF/Mach-O binaries (no extension or non-library extension).
+        # Skip .la (libtool text metadata), .so/.dylib/.a (shared/static libs).
+        _LIB_SUFFIXES = {".la", ".a", ".so", ".dylib"}
         non_exec = [
             str(f)
             for f in libexec.rglob("*")
-            if f.is_file() and not f.is_symlink() and not os.access(f, os.X_OK)
+            if (
+                f.is_file()
+                and not f.is_symlink()
+                and f.suffix not in _LIB_SUFFIXES
+                and not f.name.endswith(".so.0")  # versioned shared libs
+                and not os.access(f, os.X_OK)
+            )
         ]
         assert not non_exec, (
-            "libexec/ files missing execute bit (cc1, collect2, etc.):\n"
+            "libexec/ binaries missing execute bit (cc1, collect2, etc.):\n"
             + "\n".join(non_exec[:10])
         )
 

@@ -4,11 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pymcu-avr-toolchain"
-version = "1!7.3.0.post1"
+version = "1!7.3.0.post2"
 description = "Pre-built AVR-GCC 7.3.0 toolchain for PyMCU (avr-gcc, avr-as, avr-objcopy, avr-gdb, avr-libc)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "GPL-2.0-or-later AND LGPL-2.1-or-later AND BSD-2-Clause" }
+license-files = ["LICENSE"]
 authors = [
     { name = "Iván Montiel Cardona", email = "contact@pymcu.org" },
 ]

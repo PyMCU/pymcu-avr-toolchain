@@ -118,15 +118,11 @@ def get_tool(name: str) -> Path:
 
 
 def toolchain_version() -> str:
-    """Return the GCC version from the manifest, or the package version as fallback."""
-    v = manifest().get("gcc_version", "unknown")
-    if v and v != "unknown":
+    """Return the GCC version (always 7.3.0 for PlatformIO-sourced wheels)."""
+    v = manifest().get("gcc_version", "")
+    if v and v not in ("unknown", ""):
         return v
-    try:
-        from importlib.metadata import version as _pkg_version  # noqa: PLC0415
-        return _pkg_version("pymcu-avr-toolchain")
-    except Exception:
-        return "unknown"
+    return "7.3.0"
 
 
 def manifest() -> dict:

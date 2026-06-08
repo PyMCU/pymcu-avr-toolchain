@@ -1,26 +1,22 @@
 # -----------------------------------------------------------------------------
-# pymcu-avr-toolchain -- auto-download from GitHub Releases
+# pymcu-avr-toolchain -- auto-download from PlatformIO CDN
 # Copyright (C) 2026 Ivan Montiel Cardona and the PyMCU Project Authors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: GPL-2.0-or-later
 # -----------------------------------------------------------------------------
 
 """
-Download the AVR toolchain binary wheel from the pymcu-avr-toolchain GitHub
-Release and extract its binaries into the shared PyMCU cache.
+Download the AVR toolchain tarball from the PlatformIO package registry and
+stage the binaries into the shared PyMCU cache.
 
-This module is invoked automatically by :func:`get_bin_dir` when the package
-is installed from the PyPI sdist (no bundled binaries).  Users can also run it
-explicitly::
+Invoked automatically by :func:`get_bin_dir` when no bundled binaries are
+present (sdist / stub install).  Can also be called directly::
 
     python -m pymcu_avr_toolchain fetch
 
 Environment variables
 ---------------------
-PYMCU_AVR_WHEEL_URL
-    Override the wheel download URL (useful for air-gapped installs or testing).
-PYMCU_SKIP_HASH_CHECK=1
-    Skip SHA-256 verification (not normally needed; the wheel's integrity is
-    guaranteed by HTTPS + GitHub's CDN).
+PYMCU_AVR_TOOLCHAIN_URL
+    Override the tarball download URL (for air-gapped installs or testing).
 """
 
 from __future__ import annotations
@@ -30,88 +26,64 @@ import os
 import platform
 import ssl
 import sys
+import tarfile
 import tempfile
 import urllib.request
-import zipfile
 from pathlib import Path
-from typing import Optional
 
-_REPO = "PyMCU/avr-gcc-build"
-_RELEASE_BASE = f"https://github.com/{_REPO}/releases/download"
+_PIO_BASE = (
+    "https://dl.registry.platformio.org/download/platformio/tool"
+    "/toolchain-atmelavr/3.70300.220127"
+)
 
-# Subdirectories inside the wheel that contain toolchain binaries.
-# Python source files (.py, .dist-info) are intentionally excluded.
-_TOOLCHAIN_SUBDIRS = {"bin", "lib", "avr", "libexec", "share", "include"}
+# PlatformIO uses a single Windows tarball for x86, x64 and arm64 (WoA emulation).
+# macOS arm64 uses the x86_64 tarball (runs via Rosetta 2).
+_RELEASES: dict[str, str] = {
+    "darwin-x86_64":  "toolchain-atmelavr-darwin_x86_64-3.70300.220127.tar.gz",
+    "darwin-arm64":   "toolchain-atmelavr-darwin_x86_64-3.70300.220127.tar.gz",
+    "linux-x86_64":   "toolchain-atmelavr-linux_x86_64-3.70300.220127.tar.gz",
+    "linux-aarch64":  "toolchain-atmelavr-linux_aarch64-3.70300.220127.tar.gz",
+    "win32-x86_64":   "toolchain-atmelavr-windows-3.70300.220127.tar.gz",
+    "win32-arm64":    "toolchain-atmelavr-windows-3.70300.220127.tar.gz",
+}
 
 
-def _wheel_platform_tag() -> str:
-    """Return the wheel platform tag for the current machine."""
+def _platform_key() -> str:
     machine = platform.machine().lower()
-    if machine in ("amd64", "x86_64"):
-        arch = "x86_64"
-        manylinux_arch = "x86_64"
-    elif machine in ("arm64", "aarch64"):
-        arch = "arm64"
-        manylinux_arch = "aarch64"
-    else:
-        raise RuntimeError(
-            f"pymcu-avr-toolchain: unsupported architecture '{machine}'.\n"
-            f"Download the toolchain manually from:\n"
-            f"  https://github.com/{_REPO}/releases"
-        )
-
-    if sys.platform == "darwin":
-        return "macosx_14_0_arm64"
-    elif sys.platform.startswith("linux"):
-        return f"manylinux_2_17_{manylinux_arch}"
-    elif sys.platform == "win32":
-        return "win_amd64"
-    else:
-        raise RuntimeError(
-            f"pymcu-avr-toolchain: unsupported platform '{sys.platform}'.\n"
-            f"Download the toolchain manually from:\n"
-            f"  https://github.com/{_REPO}/releases"
-        )
+    arch = "x86_64" if machine in ("amd64", "x86_64") else "arm64" if machine in ("arm64", "aarch64") else machine
+    os_name = sys.platform if sys.platform == "win32" else ("darwin" if sys.platform == "darwin" else "linux")
+    return f"{os_name}-{arch}"
 
 
-def _wheel_url(pkg_version: str) -> str:
-    """Construct the GitHub Release URL for the current platform's binary wheel."""
-    url = os.environ.get("PYMCU_AVR_WHEEL_URL")
+def _tarball_url() -> str:
+    url = os.environ.get("PYMCU_AVR_TOOLCHAIN_URL")
     if url:
         return url
-    tag = _wheel_platform_tag()
-    wheel_name = f"pymcu_avr_toolchain-{pkg_version}-py3-none-{tag}.whl"
-    return f"{_RELEASE_BASE}/v{pkg_version}/{wheel_name}"
-
-
-def _log(msg: str) -> None:
-    print(msg, flush=True)
+    key = _platform_key()
+    filename = _RELEASES.get(key)
+    if filename is None:
+        raise RuntimeError(
+            f"pymcu-avr-toolchain: no pre-built tarball for platform '{key}'.\n"
+            f"Set PYMCU_AVR_TOOLCHAIN_URL to a custom tarball URL."
+        )
+    return f"{_PIO_BASE}/{filename}"
 
 
 def _ssl_context() -> ssl.SSLContext:
-    """
-    Return an SSL context with working CA certificates.
-
-    Python builds from python.org on macOS use a bundled OpenSSL that does not
-    read the system keychain automatically.  We supplement the default context
-    with known system CA bundle paths so HTTPS to GitHub works out of the box.
-    """
     ctx = ssl.create_default_context()
-    _CA_CANDIDATES = [
+    for cafile in [
         os.environ.get("SSL_CERT_FILE", ""),
-        "/etc/ssl/cert.pem",                        # macOS system bundle
-        "/etc/ssl/certs/ca-certificates.crt",        # Debian/Ubuntu
-        "/etc/pki/tls/certs/ca-bundle.crt",          # RHEL/CentOS/Fedora
-        "/usr/local/etc/openssl/cert.pem",            # Homebrew OpenSSL
-    ]
-    for cafile in _CA_CANDIDATES:
+        "/etc/ssl/cert.pem",
+        "/etc/ssl/certs/ca-certificates.crt",
+        "/etc/pki/tls/certs/ca-bundle.crt",
+        "/usr/local/etc/openssl/cert.pem",
+    ]:
         if cafile and os.path.isfile(cafile):
             try:
                 ctx.load_verify_locations(cafile=cafile)
                 return ctx
             except ssl.SSLError:
                 continue
-    # certifi as last resort (common transitive dependency)
     try:
         import certifi  # noqa: PLC0415
         ctx.load_verify_locations(cafile=certifi.where())
@@ -121,47 +93,30 @@ def _ssl_context() -> ssl.SSLContext:
 
 
 def _download(url: str, dest: Path) -> None:
-    """Download *url* to *dest* with a simple progress indicator."""
     ctx = _ssl_context()
     req = urllib.request.Request(url, headers={"User-Agent": "pymcu-avr-toolchain/1.0"})
     try:
-        with urllib.request.urlopen(req, context=ctx) as resp:
+        with urllib.request.urlopen(req, context=ctx) as resp, open(dest, "wb") as fh:
             total = int(resp.headers.get("Content-Length", 0) or 0)
-            downloaded = 0
-            report_every = max(1 << 20, total // 20)  # ~5% steps
-            next_report = report_every
-            with open(dest, "wb") as fh:
-                while True:
-                    chunk = resp.read(1 << 16)
-                    if not chunk:
-                        break
-                    fh.write(chunk)
-                    downloaded += len(chunk)
-                    if total and downloaded >= next_report:
-                        pct = min(100, downloaded * 100 // total)
-                        _log(f"  ... {pct}%")
-                        next_report += report_every
+            downloaded, next_report = 0, max(1 << 20, total // 20)
+            while True:
+                chunk = resp.read(1 << 16)
+                if not chunk:
+                    break
+                fh.write(chunk)
+                downloaded += len(chunk)
+                if total and downloaded >= next_report:
+                    print(f"  ... {min(100, downloaded * 100 // total)}%", flush=True)
+                    next_report += max(1 << 20, total // 20)
     except urllib.error.HTTPError as exc:
         raise RuntimeError(
-            f"pymcu-avr-toolchain: HTTP {exc.code} downloading wheel.\n"
-            f"URL: {url}\n"
-            f"Check that release v{_pkg_version_from_env()} exists on:\n"
-            f"  https://github.com/{_REPO}/releases"
+            f"pymcu-avr-toolchain: HTTP {exc.code} fetching toolchain.\n"
+            f"URL: {url}"
         ) from exc
     except Exception as exc:
         raise RuntimeError(
-            f"pymcu-avr-toolchain: download failed.\n"
-            f"URL: {url}\n"
-            f"Error: {exc}"
+            f"pymcu-avr-toolchain: download failed — {exc}\nURL: {url}"
         ) from exc
-
-
-def _pkg_version_from_env() -> str:
-    try:
-        from importlib.metadata import version as _v
-        return _v("pymcu-avr-toolchain")
-    except Exception:
-        return "unknown"
 
 
 def fetch_to_cache(
@@ -172,72 +127,35 @@ def fetch_to_cache(
     *,
     console=None,
 ) -> None:
-    """
-    Download the binary wheel for the current platform and extract its toolchain
-    directories into *cache_dir*.  Writes *sentinel* on success.
-
-    Parameters
-    ----------
-    cache_dir:
-        Root of the versioned cache directory (e.g. ``~/.pymcu/tools/darwin-arm64/
-        pymcu-avr-toolchain/15.2.0.post3``).
-    bin_dir:
-        ``<cache_dir>/bin`` — returned by :func:`get_bin_dir` after seeding.
-    sentinel:
-        Path to the ``<cache_dir>/.seeded_from_wheel`` marker file.
-    cache_key:
-        The pip package version string (used as the cache directory name and
-        stored in the sentinel so that upgrades invalidate the cache).
-    """
+    """Download the PlatformIO toolchain tarball and stage it into *cache_dir*."""
     def log(msg: str) -> None:
         if console is not None:
             console.print(msg)
         else:
-            _log(msg)
+            print(msg, flush=True)
 
-    url = _wheel_url(cache_key)
-    log(f"[pymcu-avr-toolchain] No bundled toolchain found.")
-    log(f"[pymcu-avr-toolchain] Downloading binary wheel from GitHub Releases:")
+    url = _tarball_url()
+    log("[pymcu-avr-toolchain] No bundled toolchain found.")
+    log("[pymcu-avr-toolchain] Downloading from PlatformIO registry:")
     log(f"  {url}")
 
     with tempfile.TemporaryDirectory(prefix="pymcu-avr-") as td:
         tmp = Path(td)
-        wheel_path = tmp / "toolchain.whl"
-
-        _download(url, wheel_path)
-        log("[pymcu-avr-toolchain] Extracting toolchain binaries ...")
-
+        archive = tmp / "toolchain.tar.gz"
+        _download(url, archive)
+        log("[pymcu-avr-toolchain] Extracting toolchain ...")
         cache_dir.mkdir(parents=True, exist_ok=True)
-
-        # A wheel is a zip file.  Extract only the toolchain subdirectories
-        # (bin/, lib/, avr/, etc.) from the pymcu_avr_toolchain/ package root.
-        pkg_prefix = "pymcu_avr_toolchain/"
-        with zipfile.ZipFile(wheel_path) as zf:
-            for member in zf.namelist():
-                if not member.startswith(pkg_prefix):
-                    continue
-                rel = member[len(pkg_prefix):]
-                parts = rel.split("/")
-                if not parts or parts[0] not in _TOOLCHAIN_SUBDIRS:
-                    continue
-                dest = cache_dir / rel
-                if member.endswith("/"):
-                    dest.mkdir(parents=True, exist_ok=True)
-                else:
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    dest.write_bytes(zf.read(member))
+        # The PlatformIO tarball has no top-level wrapper directory —
+        # contents are: bin/, avr/, lib/, libexec/, etc. at the root.
+        with tarfile.open(archive, "r:gz") as tf:
+            tf.extractall(cache_dir)  # noqa: S202 — trusted PlatformIO CDN
 
     if not bin_dir.is_dir():
         raise RuntimeError(
-            f"pymcu-avr-toolchain: bin/ directory not found after extraction.\n"
-            f"The downloaded wheel may not contain AVR toolchain binaries.\n"
-            f"Expected platform wheel for: {_wheel_platform_tag()}"
+            f"pymcu-avr-toolchain: bin/ not found after extraction in {cache_dir}"
         )
 
     if sys.platform != "win32":
-        # Restore execute bits. GitHub Actions artifact upload uses ZIP which
-        # strips them; the downloaded wheel inherits this defect for bin/ and
-        # libexec/ (cc1, collect2, lto1, ...).
         for search_dir in (bin_dir, cache_dir / "libexec"):
             if not search_dir.is_dir():
                 continue
@@ -246,9 +164,7 @@ def fetch_to_cache(
                     with contextlib.suppress(OSError):
                         entry.chmod(entry.stat().st_mode | 0o111)
 
-        # avr-gcc 15.x looks for 'as' and 'ld' (no avr- prefix) in
-        # COMPILER_PATH (avr/bin/) then PATH. Create the un-prefixed symlinks
-        # so the wheel tools are found instead of the system x86_64 ones.
+        # Create as/ld symlinks so avr-gcc 7.x finds them via COMPILER_PATH
         avr_bin = cache_dir / "avr" / "bin"
         for sym_name, target in (("as", "avr-as"), ("ld", "avr-ld")):
             sym = bin_dir / sym_name
@@ -261,5 +177,33 @@ def fetch_to_cache(
                     with contextlib.suppress(OSError):
                         avr_sym.symlink_to(f"../../bin/{target}")
 
+        if sys.platform == "darwin":
+            _codesign_darwin(cache_dir)
+
     sentinel.write_text(cache_key, encoding="utf-8")
     log(f"[pymcu-avr-toolchain] Toolchain ready at: {bin_dir}")
+
+
+def _codesign_darwin(root: Path) -> None:
+    """Ad-hoc codesign all Mach-O binaries and dylibs after staging on macOS.
+
+    Binaries extracted from a tarball lose their original code signature (the
+    file hash changes). macOS Sequoia+ kills any binary with an invalid
+    signature. Replacing it with an ad-hoc signature ('-s -') is sufficient
+    for local execution and requires no Apple Developer account.
+    """
+    import shutil, subprocess  # noqa: PLC0415
+    codesign = shutil.which("codesign")
+    if not codesign:
+        return
+    for search in (root / "bin", root / "lib", root / "libexec"):
+        if not search.is_dir():
+            continue
+        for entry in search.rglob("*"):
+            if not entry.is_file() or entry.is_symlink():
+                continue
+            with contextlib.suppress(Exception):
+                subprocess.run(
+                    [codesign, "--force", "-s", "-", str(entry)],
+                    capture_output=True,
+                )

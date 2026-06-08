@@ -14,7 +14,7 @@ avr-gcc   avr-as   avr-objcopy
 `avr-size`, `avr-gdb`, and `avr-libc`.)
 
 This package is the AVR counterpart of
-[`pymcu-rp2040-toolchain`](https://github.com/PyMCU/pymcu-rp2040-toolchain): a
+[`pymcu-arm-toolchain`](https://github.com/PyMCU/pymcu-arm-toolchain): a
 platform-specific wheel whose only job is to ship those tools so that
 `pip install pymcu-compiler[avr]` is fully self-contained — no separate
 `avr-gcc` installation required on supported platforms.
@@ -32,7 +32,7 @@ package as a whole is distributed under **GPL-3.0-or-later**.
 - The GPL applies to the **toolchain binaries themselves**, not to the firmware
   your projects compile with them. Firmware produced by `avr-gcc` is your own
   work and carries no GPL obligation.
-- **Contrast with RP2040:** `pymcu-rp2040-toolchain` bundles LLVM, which is
+- **Contrast with ARM:** `pymcu-arm-toolchain` bundles LLVM, which is
   Apache-2.0 WITH LLVM-exception (permissive, no copyleft). The isolation
   mechanism is the same — a separate optional package — but the license
   differs because the upstream compilers differ.

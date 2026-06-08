@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pymcu-avr-toolchain"
-version = "1!7.3.0"
+version = "1!7.3.0.post1"
 description = "Pre-built AVR-GCC 7.3.0 toolchain for PyMCU (avr-gcc, avr-as, avr-objcopy, avr-gdb, avr-libc)"
 readme = "README.md"
 requires-python = ">=3.11"

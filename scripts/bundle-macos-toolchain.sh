@@ -47,8 +47,21 @@ for candidate in "$BREW_PREFIX/opt/avr-binutils"; do
 done
 [ -n "$BIN_KEG" ] || { echo "ERROR: avr-binutils keg not found under $BREW_PREFIX/opt/"; exit 1; }
 
+LIBC_KEG=""
+for candidate in "$BREW_PREFIX/opt/avr-libc"; do
+    if [ -d "$candidate/avr" ]; then
+        LIBC_KEG="$candidate"
+        break
+    fi
+done
+# avr-libc is optional: warn but continue without it (libm.a / libc.a won't be bundled)
+if [ -z "$LIBC_KEG" ]; then
+    echo "WARNING: avr-libc keg not found under $BREW_PREFIX/opt/ — libm.a will not be bundled"
+fi
+
 echo "avr-gcc keg:      $GCC_KEG"
 echo "avr-binutils keg: $BIN_KEG"
+echo "avr-libc keg:     ${LIBC_KEG:-<not found>}"
 echo "Output:           $OUTPUT"
 
 # ── Copy toolchain files ─────────────────────────────────────────────────────
@@ -67,6 +80,20 @@ done
 
 # AVR sysroot (device headers, crt*.o) from binutils keg
 [ -d "$BIN_KEG/avr" ] && cp -rL "$BIN_KEG/avr" "$OUTPUT/"
+
+# avr-libc: headers and libraries (libm.a, libc.a, libprintf_flt.a, etc.)
+# Merge into avr/ so the layout matches what avr-gcc expects:
+#   avr/include/  — C library headers
+#   avr/lib/      — libm.a, libc.a, multilib subdirs (avr25/, avr5/, etc.)
+if [ -n "$LIBC_KEG" ] && [ -d "$LIBC_KEG/avr" ]; then
+    cp -rL "$LIBC_KEG/avr/include" "$OUTPUT/avr/" 2>/dev/null || true
+    # Merge lib/ entries (avr-binutils may have already placed crt*.o there)
+    if [ -d "$LIBC_KEG/avr/lib" ]; then
+        mkdir -p "$OUTPUT/avr/lib"
+        cp -rLn "$LIBC_KEG/avr/lib/." "$OUTPUT/avr/lib/" 2>/dev/null || true
+    fi
+    echo "avr-libc bundled from: $LIBC_KEG/avr"
+fi
 
 # ── Dylib bundling ────────────────────────────────────────────────────────────
 # avr-gcc and its cc1/cc1plus helpers are dynamically linked against Homebrew's

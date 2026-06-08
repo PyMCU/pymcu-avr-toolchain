@@ -356,7 +356,7 @@ jobs:
 
       - name: Install AVR toolchain via Homebrew
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        run: brew install avr-gcc avr-binutils
+        run: brew install avr-gcc avr-binutils avr-libc
 
       - name: Assemble and bundle toolchain
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
@@ -366,6 +366,7 @@ jobs:
         run: |
           macos-arm64-toolchain-staged/bin/avr-gcc --version
           macos-arm64-toolchain-staged/bin/avr-gcc -mmcu=atmega328p --print-libgcc-file-name
+          test -f macos-arm64-toolchain-staged/avr/lib/libm.a && echo "libm.a OK" || echo "WARNING: libm.a missing"
 
       - name: Capture avr-gcc version
         id: gcc-ver

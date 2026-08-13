@@ -137,13 +137,44 @@ def manifest() -> dict:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _global_cache_dir() -> Path:
+# Windows and macOS get a single upstream build covering every architecture:
+# PlatformIO publishes only x86_64 there, and ARM machines run it emulated (see
+# the _RELEASES map in _fetch.py, where win32-arm64 and darwin-arm64 both point
+# at the non-ARM tarball). Keying the cache on the interpreter's architecture
+# therefore stored the same 230 MB twice on a machine that ran both an ARM and
+# an x86_64 Python -- which is exactly what a Windows on Arm run produced.
+# Linux does ship per-architecture builds, so there the arch stays in the key.
+_SINGLE_BUILD_OS = ("win32", "darwin")
+
+
+def _tools_root() -> Path:
     env = os.environ.get("PYMCU_TOOLS_DIR")
     if env:
-        base = Path(env).resolve()
-    else:
-        base = Path.home() / ".pymcu" / "tools"
-    return base / _platform_key()
+        return Path(env).resolve()
+    return Path.home() / ".pymcu" / "tools"
+
+
+def _payload_key() -> str:
+    """
+    Cache key naming the binaries that get stored, not the interpreter asking.
+
+    The directory says what is inside it: on Apple Silicon and Windows on Arm
+    the bytes really are x86_64, so that is what the path says.
+    """
+    os_name, _, arch = _platform_key().partition("-")
+    if os_name in _SINGLE_BUILD_OS:
+        return f"{os_name}-x86_64"
+    return f"{os_name}-{arch}"
+
+
+def _legacy_cache_dirs() -> list[Path]:
+    """Cache directories written by the interpreter-keyed scheme."""
+    root, current = _tools_root(), _payload_key()
+    return [root / _platform_key()] if _platform_key() != current else []
+
+
+def _global_cache_dir() -> Path:
+    return _tools_root() / _payload_key()
 
 
 def _platform_key() -> str:
@@ -172,9 +203,59 @@ def _cache_is_complete(
     return True
 
 
+def _adopt_legacy_cache(cache_dir: Path, bin_dir: Path, sentinel: Path, cache_key: str) -> bool:
+    """
+    Move a cache seeded under the old interpreter-keyed path into the new one.
+
+    A rename beats re-seeding: it costs nothing on the same filesystem and it
+    leaves no second copy behind, which was the whole complaint. If anything
+    goes wrong the caller just seeds normally -- the old directory is then left
+    untouched for `pymcu toolchain clean` to remove.
+    """
+    for legacy_root in _legacy_cache_dirs():
+        legacy = legacy_root / "pymcu-avr-toolchain" / cache_key
+        if not _cache_is_complete(legacy, legacy / "bin", legacy / ".seeded_from_wheel", cache_key):
+            continue
+        try:
+            cache_dir.parent.mkdir(parents=True, exist_ok=True)
+            if cache_dir.exists():
+                shutil.rmtree(cache_dir, ignore_errors=True)
+            os.replace(legacy, cache_dir)
+            with contextlib.suppress(OSError):
+                legacy.parent.rmdir()          # only if now empty
+                legacy_root.rmdir()
+            return _cache_is_complete(cache_dir, bin_dir, sentinel, cache_key)
+        except OSError:
+            continue
+    return False
+
+
+def _prune_old_versions(versions_dir: Path, keep: int = 2) -> None:
+    """
+    Keep the newest *keep* toolchain versions and drop the rest.
+
+    Nothing pruned these before, so every upgrade left its predecessor behind
+    for good: a developer machine here had four versions of this toolchain
+    alone, 931 MB. Two are kept rather than one so that a project pinned to the
+    previous release keeps working after another project pulls a newer one.
+    """
+    if not versions_dir.is_dir():
+        return
+    entries = [d for d in versions_dir.iterdir() if d.is_dir()]
+    if len(entries) <= keep:
+        return
+    for stale in sorted(entries, key=lambda d: d.stat().st_mtime, reverse=True)[keep:]:
+        with contextlib.suppress(OSError):
+            shutil.rmtree(stale)
+
+
 def _seed_cache(cache_dir: Path, bin_dir: Path, sentinel: Path, cache_key: str) -> None:
     with _seed_lock(cache_dir):
         if _cache_is_complete(cache_dir, bin_dir, sentinel, cache_key):
+            return
+
+        if _adopt_legacy_cache(cache_dir, bin_dir, sentinel, cache_key):
+            _prune_old_versions(cache_dir.parent)
             return
 
         if not (_PKG_DIR / "bin").is_dir():
@@ -223,6 +304,7 @@ def _seed_cache(cache_dir: Path, bin_dir: Path, sentinel: Path, cache_key: str) 
                             avr_sym.symlink_to(f"../../bin/{target}")
 
         sentinel.write_text(cache_key, encoding="utf-8")
+        _prune_old_versions(cache_dir.parent)
 
 
 def _hardlink_or_copy_tree(src: Path, dst: Path) -> None:

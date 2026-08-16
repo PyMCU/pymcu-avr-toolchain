@@ -43,6 +43,7 @@ export PATH="$PREFIX/bin:$PATH"
 mkdir -p "$ROOT/build/gcc" && cd "$ROOT/build/gcc"
 if [ ! -f .done ]; then
   "$ROOT/src/gcc-$GCC/configure" --target=avr --prefix="$PREFIX" \
+      --build=x86_64-w64-mingw32 --host=x86_64-w64-mingw32 \
       --enable-checking=release \
       --enable-languages=c,c++ --disable-nls --disable-libssp --disable-libada \
       --disable-shared --with-dwarf2 \

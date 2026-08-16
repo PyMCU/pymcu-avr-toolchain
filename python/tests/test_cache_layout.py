@@ -4,8 +4,8 @@
 #
 # From a Windows 11 ARM report: ~/.pymcu/tools held the toolchain twice, under
 # win32-arm64 and win32-x86_64, 226 MB each, with identical binaries. The cache
-# key named the interpreter's architecture, but Windows and macOS get a single
-# upstream build for every architecture -- so two Pythons of different
+# key named the interpreter's architecture, but Windows ships a single build for
+# every architecture (WoA emulates x64) -- so two Pythons of different
 # architectures on one machine stored the same bytes twice.
 
 import os
@@ -28,13 +28,10 @@ def _seed(dirpath: Path, version: str = KEY) -> Path:
 
 
 class TestPayloadKey:
-    @pytest.mark.parametrize(("machine", "plat"), [
-        ("arm64", "darwin"), ("x86_64", "darwin"),
-    ])
-    def test_macos_shares_one_key(self, machine, plat):
-        with patch("platform.machine", return_value=machine), \
-             patch("sys.platform", plat):
-            assert tc._payload_key() == "darwin-x86_64"
+    def test_macos_keeps_its_architecture(self):
+        with patch("platform.machine", return_value="arm64"), \
+             patch("sys.platform", "darwin"):
+            assert tc._payload_key() == "darwin-arm64"
 
     @pytest.mark.parametrize("machine", ["ARM64", "AMD64"])
     def test_windows_shares_one_key(self, machine):
@@ -51,12 +48,16 @@ class TestPayloadKey:
                 assert tc._payload_key() == "linux-arm64"
 
     def test_the_key_describes_the_bytes_stored(self):
-        # On Apple Silicon the binaries are genuinely x86_64 (Rosetta runs
-        # them), so the directory name says so instead of claiming arm64.
+        with patch("platform.machine", return_value="ARM64"), \
+             patch("sys.platform", "win32"):
+            assert tc._platform_key() == "win32-arm64"       # interpreter
+            assert tc._payload_key() == "win32-x86_64"       # contents
+
+    def test_apple_silicon_never_points_at_the_intel_cache(self):
         with patch("platform.machine", return_value="arm64"), \
              patch("sys.platform", "darwin"):
-            assert tc._platform_key() == "darwin-arm64"      # interpreter
-            assert tc._payload_key() == "darwin-x86_64"      # contents
+            assert tc._payload_key() == "darwin-arm64"
+            assert tc._legacy_cache_dirs() == []
 
     def test_no_legacy_dir_when_the_keys_agree(self):
         with patch("platform.machine", return_value="x86_64"), \
@@ -67,10 +68,10 @@ class TestPayloadKey:
 class TestLegacyAdoption:
     def test_a_cache_under_the_old_key_is_moved_not_copied(self, tmp_path):
         with patch.dict(os.environ, {"PYMCU_TOOLS_DIR": str(tmp_path)}), \
-             patch("platform.machine", return_value="arm64"), \
-             patch("sys.platform", "darwin"):
-            legacy = _seed(tmp_path / "darwin-arm64" / "pymcu-avr-toolchain" / KEY)
-            new = tmp_path / "darwin-x86_64" / "pymcu-avr-toolchain" / KEY
+             patch("platform.machine", return_value="ARM64"), \
+             patch("sys.platform", "win32"):
+            legacy = _seed(tmp_path / "win32-arm64" / "pymcu-avr-toolchain" / KEY)
+            new = tmp_path / "win32-x86_64" / "pymcu-avr-toolchain" / KEY
 
             adopted = tc._adopt_legacy_cache(
                 new, new / "bin", new / ".seeded_from_wheel", KEY
@@ -80,16 +81,16 @@ class TestLegacyAdoption:
         assert (new / "bin" / "avr-gcc").read_text() == "binary"
         # "Without leaving a second copy" is the point of the exercise.
         assert not legacy.exists()
-        assert not (tmp_path / "darwin-arm64").exists()
+        assert not (tmp_path / "win32-arm64").exists()
 
     def test_an_incomplete_legacy_cache_is_ignored(self, tmp_path):
         with patch.dict(os.environ, {"PYMCU_TOOLS_DIR": str(tmp_path)}), \
-             patch("platform.machine", return_value="arm64"), \
-             patch("sys.platform", "darwin"):
+             patch("platform.machine", return_value="ARM64"), \
+             patch("sys.platform", "win32"):
             # No sentinel: a half-written cache must not be adopted.
-            legacy = tmp_path / "darwin-arm64" / "pymcu-avr-toolchain" / KEY
+            legacy = tmp_path / "win32-arm64" / "pymcu-avr-toolchain" / KEY
             (legacy / "bin").mkdir(parents=True)
-            new = tmp_path / "darwin-x86_64" / "pymcu-avr-toolchain" / KEY
+            new = tmp_path / "win32-x86_64" / "pymcu-avr-toolchain" / KEY
 
             assert tc._adopt_legacy_cache(
                 new, new / "bin", new / ".seeded_from_wheel", KEY
@@ -97,10 +98,10 @@ class TestLegacyAdoption:
 
     def test_a_stale_version_under_the_old_key_is_not_adopted(self, tmp_path):
         with patch.dict(os.environ, {"PYMCU_TOOLS_DIR": str(tmp_path)}), \
-             patch("platform.machine", return_value="arm64"), \
-             patch("sys.platform", "darwin"):
-            _seed(tmp_path / "darwin-arm64" / "pymcu-avr-toolchain" / KEY, version="0.0.1")
-            new = tmp_path / "darwin-x86_64" / "pymcu-avr-toolchain" / KEY
+             patch("platform.machine", return_value="ARM64"), \
+             patch("sys.platform", "win32"):
+            _seed(tmp_path / "win32-arm64" / "pymcu-avr-toolchain" / KEY, version="0.0.1")
+            new = tmp_path / "win32-x86_64" / "pymcu-avr-toolchain" / KEY
 
             assert tc._adopt_legacy_cache(
                 new, new / "bin", new / ".seeded_from_wheel", KEY

@@ -137,14 +137,12 @@ def manifest() -> dict:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-# Windows and macOS get a single upstream build covering every architecture:
-# PlatformIO publishes only x86_64 there, and ARM machines run it emulated (see
-# the _RELEASES map in _fetch.py, where win32-arm64 and darwin-arm64 both point
-# at the non-ARM tarball). Keying the cache on the interpreter's architecture
-# therefore stored the same 230 MB twice on a machine that ran both an ARM and
-# an x86_64 Python -- which is exactly what a Windows on Arm run produced.
-# Linux does ship per-architecture builds, so there the arch stays in the key.
-_SINGLE_BUILD_OS = ("win32", "darwin")
+# Windows still gets a single upstream build covering every architecture:
+# PlatformIO publishes only x86_64 there and ARM machines run it emulated (see
+# the _RELEASES map in _fetch.py). Keying the cache on the interpreter's
+# architecture stored the same 230 MB twice on a machine that ran both an ARM
+# and an x86_64 Python -- which is exactly what a Windows on Arm run produced.
+_SINGLE_BUILD_OS = ("win32",)
 
 
 def _tools_root() -> Path:

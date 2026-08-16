@@ -1,5 +1,7 @@
 
 output/
+# Salida de los guiones de scripts/: tarballs y wheels de cientos de MB.
+out-*/
 __pycache__/
 *.py[cod]
 *.egg-info/

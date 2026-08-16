@@ -1,12 +1,16 @@
 # -----------------------------------------------------------------------------
-# pymcu-avr-toolchain -- auto-download from PlatformIO CDN
+# pymcu-avr-toolchain -- staging of a toolchain tarball into the PyMCU cache
 # Copyright (C) 2026 Ivan Montiel Cardona and the PyMCU Project Authors
 # SPDX-License-Identifier: GPL-2.0-or-later
 # -----------------------------------------------------------------------------
 
 """
-Download the AVR toolchain tarball from the PlatformIO package registry and
-stage the binaries into the shared PyMCU cache.
+Download an AVR toolchain tarball and stage the binaries into the shared PyMCU
+cache.
+
+Only reached when the installed package carries no bundled binaries, which no
+published wheel does; in practice this runs solely for air-gapped or custom
+installs that point PYMCU_AVR_TOOLCHAIN_URL at their own tarball.
 
 Invoked automatically by :func:`get_bin_dir` when no bundled binaries are
 present (sdist / stub install).  Can also be called directly::
@@ -24,29 +28,13 @@ from __future__ import annotations
 import contextlib
 import os
 import platform
+import shutil
 import ssl
 import sys
 import tarfile
 import tempfile
 import urllib.request
 from pathlib import Path
-
-_PIO_BASE = (
-    "https://dl.registry.platformio.org/download/platformio/tool"
-    "/toolchain-atmelavr/3.70300.220127"
-)
-
-# PlatformIO uses a single Windows tarball for x86, x64 and arm64 (WoA emulation).
-# macOS arm64 uses the x86_64 tarball (runs via Rosetta 2).
-_RELEASES: dict[str, str] = {
-    "darwin-x86_64":  "toolchain-atmelavr-darwin_x86_64-3.70300.220127.tar.gz",
-    "darwin-arm64":   "toolchain-atmelavr-darwin_x86_64-3.70300.220127.tar.gz",
-    "linux-x86_64":   "toolchain-atmelavr-linux_x86_64-3.70300.220127.tar.gz",
-    "linux-aarch64":  "toolchain-atmelavr-linux_aarch64-3.70300.220127.tar.gz",
-    "win32-x86_64":   "toolchain-atmelavr-windows-3.70300.220127.tar.gz",
-    "win32-arm64":    "toolchain-atmelavr-windows-3.70300.220127.tar.gz",
-}
-
 
 def _platform_key() -> str:
     machine = platform.machine().lower()
@@ -59,14 +47,12 @@ def _tarball_url() -> str:
     url = os.environ.get("PYMCU_AVR_TOOLCHAIN_URL")
     if url:
         return url
-    key = _platform_key()
-    filename = _RELEASES.get(key)
-    if filename is None:
-        raise RuntimeError(
-            f"pymcu-avr-toolchain: no pre-built tarball for platform '{key}'.\n"
-            f"Set PYMCU_AVR_TOOLCHAIN_URL to a custom tarball URL."
-        )
-    return f"{_PIO_BASE}/{filename}"
+    raise RuntimeError(
+        f"pymcu-avr-toolchain: this install carries no bundled binaries and no "
+        f"download source is configured for platform '{_platform_key()}'.\n"
+        f"Install the platform wheel from PyPI, or set "
+        f"PYMCU_AVR_TOOLCHAIN_URL to a toolchain tarball URL."
+    )
 
 
 def _ssl_context() -> ssl.SSLContext:
@@ -127,7 +113,7 @@ def fetch_to_cache(
     *,
     console=None,
 ) -> None:
-    """Download the PlatformIO toolchain tarball and stage it into *cache_dir*."""
+    """Download the toolchain tarball and stage it into *cache_dir*."""
     def log(msg: str) -> None:
         if console is not None:
             console.print(msg)
@@ -136,19 +122,28 @@ def fetch_to_cache(
 
     url = _tarball_url()
     log("[pymcu-avr-toolchain] No bundled toolchain found.")
-    log("[pymcu-avr-toolchain] Downloading from PlatformIO registry:")
+    log("[pymcu-avr-toolchain] Downloading:")
     log(f"  {url}")
 
     with tempfile.TemporaryDirectory(prefix="pymcu-avr-") as td:
         tmp = Path(td)
-        archive = tmp / "toolchain.tar.gz"
+        archive = tmp / "toolchain.tar"
         _download(url, archive)
         log("[pymcu-avr-toolchain] Extracting toolchain ...")
+        staging = tmp / "x"
+        staging.mkdir()
+        with tarfile.open(archive, "r:*") as tf:
+            tf.extractall(staging)  # noqa: S202
+
+        entries = [p for p in staging.iterdir() if not p.name.startswith("._")]
+        root = entries[0] if len(entries) == 1 and entries[0].is_dir() else staging
+
         cache_dir.mkdir(parents=True, exist_ok=True)
-        # The PlatformIO tarball has no top-level wrapper directory —
-        # contents are: bin/, avr/, lib/, libexec/, etc. at the root.
-        with tarfile.open(archive, "r:gz") as tf:
-            tf.extractall(cache_dir)  # noqa: S202 — trusted PlatformIO CDN
+        for item in root.iterdir():
+            dest = cache_dir / item.name
+            if dest.exists():
+                shutil.rmtree(dest) if dest.is_dir() else dest.unlink()
+            shutil.move(str(item), str(dest))
 
     if not bin_dir.is_dir():
         raise RuntimeError(

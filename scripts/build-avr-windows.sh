@@ -36,8 +36,10 @@ if [ ! -f .done ]; then
   touch .done
 fi
 
-echo "=== [3/6] gcc prerequisites"
-cd "$ROOT/src/gcc-$GCC" && [ -d gmp ] || ./contrib/download_prerequisites
+echo "=== [3/6] gcc prerequisites (from MSYS2, not in-tree)"
+for lib in gmp mpfr mpc; do
+  test -f "/mingw64/lib/lib${lib}.a" || { echo "FAIL: /mingw64/lib/lib${lib}.a missing"; exit 1; }
+done
 
 echo "=== [4/6] gcc"
 export PATH="$PREFIX/bin:$PATH"
@@ -46,6 +48,7 @@ mkdir -p "$ROOT/build/gcc" && cd "$ROOT/build/gcc"
 if [ ! -f .done ]; then
   "$ROOT/src/gcc-$GCC/configure" --target=avr --prefix="$PREFIX" \
       --build=x86_64-w64-mingw32 --host=x86_64-w64-mingw32 \
+      --with-gmp=/mingw64 --with-mpfr=/mingw64 --with-mpc=/mingw64 \
       --enable-checking=release \
       --enable-languages=c,c++ --disable-nls --disable-libssp --disable-libada \
       --disable-shared --with-dwarf2 \

@@ -4,8 +4,12 @@ BINUTILS=${BINUTILS_VERSION:-2.42}
 GCC=${GCC_VERSION:-14.2.0}
 AVRLIBC=${AVRLIBC_VERSION:-2.2.0}
 
-ARCH=$(uname -m)           # aarch64 | x86_64
+ARCH=$(uname -m)
 BUILD_TRIPLE="${ARCH}-linux-gnu"
+case "$ARCH" in
+  x86_64) FILE_ARCH="x86-64" ;;
+  *)      FILE_ARCH="$ARCH" ;;
+esac
 
 ROOT="${AVR_BUILD_ROOT:-/tmp/avrtc}"
 PREFIX=$ROOT/toolchain-staged
@@ -90,7 +94,7 @@ echo "=== [6/6] verificacion"
 cd "$PREFIX"
 for b in avr-gcc avr-as avr-objcopy; do
   file "bin/$b"
-  file "bin/$b" | grep -q "$ARCH" || { echo "FALLO: $b no es $ARCH"; exit 1; }
+  file "bin/$b" | grep -q "$FILE_ARCH" || { echo "FALLO: $b no es $FILE_ARCH"; exit 1; }
   if ldd "bin/$b" | grep -vE "linux-vdso|ld-linux|libc\.so|libm\.so|libdl\.so|librt\.so|libpthread\.so|libgcc_s\.so|libstdc\+\+\.so|libz\.so|not a dynamic" | grep -q "=>"; then
     echo "FALLO: $b depende de bibliotecas ajenas:"; ldd "bin/$b"; exit 1
   fi

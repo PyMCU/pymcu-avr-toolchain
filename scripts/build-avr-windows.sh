@@ -6,6 +6,8 @@ AVRLIBC=${AVRLIBC_VERSION:-2.2.0}
 
 ROOT="${AVR_BUILD_ROOT:-/c/a}"
 PREFIX=$ROOT/toolchain-staged
+WROOT=$(cygpath -m "$ROOT")
+WPREFIX=$(cygpath -m "$PREFIX")
 export MAKEFLAGS="-j$(nproc)"
 export CFLAGS="-O2"
 export CXXFLAGS="-O2 -fno-char8_t"
@@ -46,7 +48,7 @@ export PATH="$PREFIX/bin:$PATH"
 if [ ! -f "$ROOT/build/gcc/.done" ]; then rm -rf "$ROOT/build/gcc"; fi
 mkdir -p "$ROOT/build/gcc" && cd "$ROOT/build/gcc"
 if [ ! -f .done ]; then
-  "$ROOT/src/gcc-$GCC/configure" --target=avr --prefix="$PREFIX" \
+  "$WROOT/src/gcc-$GCC/configure" --target=avr --prefix="$WPREFIX" \
       --build=x86_64-w64-mingw32 --host=x86_64-w64-mingw32 \
       --with-gmp=/mingw64 --with-mpfr=/mingw64 --with-mpc=/mingw64 \
       --enable-checking=release \

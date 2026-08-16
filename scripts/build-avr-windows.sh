@@ -25,6 +25,7 @@ TAG="${AVRLIBC//./_}"
 [ -d avr-libc-$AVRLIBC ]  || tar xf avr-libc-$AVRLIBC.tar.bz2
 
 echo "=== [2/6] binutils"
+if [ ! -f "$ROOT/build/binutils/.done" ]; then rm -rf "$ROOT/build/binutils"; fi
 mkdir -p "$ROOT/build/binutils" && cd "$ROOT/build/binutils"
 if [ ! -f .done ]; then
   "$ROOT/src/binutils-$BINUTILS/configure" --target=avr --prefix="$PREFIX" \
@@ -40,6 +41,7 @@ cd "$ROOT/src/gcc-$GCC" && [ -d gmp ] || ./contrib/download_prerequisites
 
 echo "=== [4/6] gcc"
 export PATH="$PREFIX/bin:$PATH"
+if [ ! -f "$ROOT/build/gcc/.done" ]; then rm -rf "$ROOT/build/gcc"; fi
 mkdir -p "$ROOT/build/gcc" && cd "$ROOT/build/gcc"
 if [ ! -f .done ]; then
   "$ROOT/src/gcc-$GCC/configure" --target=avr --prefix="$PREFIX" \
@@ -55,6 +57,7 @@ if [ ! -f .done ]; then
 fi
 
 echo "=== [5/6] avr-libc"
+if [ ! -f "$ROOT/build/avr-libc/.done" ]; then rm -rf "$ROOT/build/avr-libc"; fi
 mkdir -p "$ROOT/build/avr-libc" && cd "$ROOT/build/avr-libc"
 if [ ! -f .done ]; then
   "$ROOT/src/avr-libc-$AVRLIBC/configure" --prefix="$PREFIX" --host=avr \

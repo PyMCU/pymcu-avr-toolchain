@@ -14,6 +14,9 @@ on:
       avrlibc_version:
         description: avr-libc version
         default: "2.2.0"
+      cache_bust:
+        description: change this to force a clean rebuild
+        default: "0"
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -82,54 +85,65 @@ jobs:
           name: wheel-${{ matrix.name }}
           path: python/dist/*.whl
 
-  build-windows-platformio:
-    name: Build ${{ matrix.name }} (PlatformIO, provisional)
-    runs-on: ubuntu-latest
-    env:
-      PIO_BASE: "https://dl.registry.platformio.org/download/platformio/tool/toolchain-atmelavr/3.70300.220127"
-      PIO_TARBALL: "toolchain-atmelavr-windows-3.70300.220127.tar.gz"
-      PIO_GCC_VERSION: "7.3.0"
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: windows-x64
-            wheel_tag: win_amd64
-          - name: windows-arm64
-            wheel_tag: win_arm64
+  build-native-windows:
+    name: Build windows-x64 (native)
+    runs-on: windows-latest
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: msys2 {0}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download and stage PlatformIO toolchain
-        run: |
-          set -euo pipefail
-          curl -fL "$PIO_BASE/$PIO_TARBALL" -o toolchain.tar.gz
-          mkdir -p /tmp/avrtc/toolchain-staged
-          tar xzf toolchain.tar.gz -C /tmp/avrtc/toolchain-staged
-          for bin in avr-gcc avr-as avr-objcopy; do
-            test -f "/tmp/avrtc/toolchain-staged/bin/${bin}.exe" || \
-              { echo "ERROR: falta bin/${bin}.exe"; exit 1; }
-          done
-          test -f /tmp/avrtc/toolchain-staged/avr/lib/libm.a && echo "libm.a OK"
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            base-devel
+            mingw-w64-x86_64-gcc
+            make
+            curl
+            tar
+            xz
+            bzip2
+            diffutils
+            file
+            patch
+
+      - name: Cache build tree
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: C:\a
+          key: avrtc-windows-${{ env.BINUTILS_VERSION }}-${{ env.GCC_VERSION }}-${{ env.AVRLIBC_VERSION }}-${{ inputs.cache_bust || '0' }}
+
+      - name: Build toolchain from source
+        run: bash scripts/build-avr-windows.sh
 
       - uses: astral-sh/setup-uv@v6
+        with: { enable-cache: false }
 
-      - name: Build wheel
+      - name: Build wheels
+        shell: pwsh
         env:
-          AVRT_TOOLCHAIN_DIR: /tmp/avrtc/toolchain-staged
-          WHEEL_PLATFORM_TAG: ${{ matrix.wheel_tag }}
-          AVRT_GCC_VERSION: ${{ env.PIO_GCC_VERSION }}
-        run: uv build --wheel python/
+          AVRT_TOOLCHAIN_DIR: C:\a\toolchain-staged
+          AVRT_GCC_VERSION: ${{ env.GCC_VERSION }}
+        run: |
+          $env:WHEEL_PLATFORM_TAG = "win_amd64"
+          uv build --wheel python/
+          $env:WHEEL_PLATFORM_TAG = "win_arm64"
+          uv build --wheel python/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wheel-${{ matrix.name }}
+          name: wheel-windows
           path: python/dist/*.whl
 
   smoke-test:
     name: Smoke test ${{ matrix.name }}
-    needs: [build-native, build-windows-platformio]
+    needs: [build-native, build-native-windows]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -137,19 +151,24 @@ jobs:
         include:
           - name: linux-x64
             os: ubuntu-latest
+            artifact: wheel-linux-x64
           - name: linux-arm64
             os: ubuntu-24.04-arm
+            artifact: wheel-linux-arm64
           - name: macos-arm64
             os: macos-latest
+            artifact: wheel-macos-arm64
           - name: windows-x64
             os: windows-latest
+            artifact: wheel-windows
           - name: windows-arm64
             os: windows-11-arm
+            artifact: wheel-windows
 
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: wheel-${{ matrix.name }}
+          name: ${{ matrix.artifact }}
           path: dist/
 
       - uses: actions/setup-python@v5
@@ -190,7 +209,7 @@ jobs:
 
   check-consistency:
     name: All wheels ship the same avr-gcc
-    needs: [build-native, build-windows-platformio]
+    needs: [build-native, build-native-windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

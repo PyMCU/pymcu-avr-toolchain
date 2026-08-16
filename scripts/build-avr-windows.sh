@@ -8,7 +8,7 @@ ROOT="${AVR_BUILD_ROOT:-/c/a}"
 PREFIX=$ROOT/toolchain-staged
 export MAKEFLAGS="-j$(nproc)"
 export CFLAGS="-O2"
-export CXXFLAGS="-O2"
+export CXXFLAGS="-O2 -fno-char8_t"
 export LDFLAGS="-static -static-libgcc -static-libstdc++"
 export LC_ALL=C
 

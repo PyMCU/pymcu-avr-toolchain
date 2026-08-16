@@ -1,0 +1,320 @@
+[
+  {
+    "name": "adc-interrupt",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "39b7f1fc15ec3f402210d9e0498374536313b764739f0883c236e0ec0bbc3aea"
+  },
+  {
+    "name": "adc-read",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "3c573d9e5d0ae6f32ea54bfddffafcb4960036c2d6c39a23cb9bcb4864476f0a"
+  },
+  {
+    "name": "analog-inout",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "8f16ebf471869d8fdcced9e56bb00c86a0a1d1192433adbf5aaf05b38c58a848"
+  },
+  {
+    "name": "analog-inout-mp",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "81d3b40fbacb410964b8396af60ab5d6b802acc48c8da40e99b33c3e93f568e8"
+  },
+  {
+    "name": "blink",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "ca6f0eebc301da2204afbf37c648c1119b19c241bb91d767932ca88b6f59b307"
+  },
+  {
+    "name": "bmp280",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "63873030b8aea1b04eb653ddce9c685f281cb03779a131ef4b6eaaea2abe6c09"
+  },
+  {
+    "name": "button-debounce",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "876684dcc732bbcdd35a22793271be3aa7fd24a74557bc17d143de111e82241b"
+  },
+  {
+    "name": "checksum",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "4af296d557d54539565b47d7e30b8f7ed87a5f611a86bc954792435ff7a2a3a1"
+  },
+  {
+    "name": "clamp-filter",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "d2e789e227fbe093dae222ef12d9bdae8018714fc617bf7e0c90f8063a2f5e04"
+  },
+  {
+    "name": "dht-sensor",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "1c3a6fa0aac63fb96649ceb673bbb66dc928e5aace93e36ebf50a8adf78e61b4"
+  },
+  {
+    "name": "eeprom",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "ba04dc3fc93319d0f1eb00129e3677e3606d61f14a97a818706a41e35c7ae90f"
+  },
+  {
+    "name": "enum-state",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "c91d3b31e3f39c6d1c2f9a98c7fc0ad0698b537320f553c7c7d7f3abc3c819a0"
+  },
+  {
+    "name": "error-handling",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "934120c7a3073b8ce62131d45d0527baa92894ad2290dc0e016766b483e7902a"
+  },
+  {
+    "name": "i2c-irq",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "63425329e726f1781f2462eb3283bdd0ae1e90b5e2aa071e4c5f92ebfb2a0876"
+  },
+  {
+    "name": "i2c-scanner",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "a05ff38dc2f682a2bbcf0522c3abf6d50daf7d737a6a7de3fb0e150e0442a037"
+  },
+  {
+    "name": "inheritance-zca",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "e803bb344e24f399129da22958e2b2ea5c04d028bec4e771bf64b6338e5e41c4"
+  },
+  {
+    "name": "interrupt-counter",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "2da727ba1a4e3b1233342c35ef4f1feda8c2b97269a8708039405a63b24b0443"
+  },
+  {
+    "name": "lcd",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "9035c1bd684b3ebc6dd01d08fe15869e00e4508a1b1cad226cb53498f99e791f"
+  },
+  {
+    "name": "max7219",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "88f5911ab24367183954328ed4d7c268f2f98c8ef418212a9b779b8ece513ce0"
+  },
+  {
+    "name": "multi-pin",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "15867dbf3e222e18b19e7453b88d8a50b6ef8b21f1f4c63b8a8b78fbd5edbc87"
+  },
+  {
+    "name": "neopixel",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "1f2e85b4c8b08572fa3659fe051591aea2f5e6fb6df1c0dd422f32f533954c1a"
+  },
+  {
+    "name": "pcint-counter",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "8ed6420005128b96db18eb675cd41f7bc820bcb8d968a652989340605be6e336"
+  },
+  {
+    "name": "pin-irq",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "bd1eac8f095a8798f4204b537a67e6e971b99095b33be874586078cd6b3cb5cf"
+  },
+  {
+    "name": "pin-irq-mp",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "5372a92bed83d7175cb8c414481a83f35aa20bca9755744f305550c2a7fa20ba"
+  },
+  {
+    "name": "pwm-fade",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "88803c035203be609910578ad8c413c91dda3d9c39ddf18eebaaed62fc0b504a"
+  },
+  {
+    "name": "pwm-multi",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "61afada4319f6962edabaf77dcf5b335365f481ad6dd2d1ab0c9126a68772f9a"
+  },
+  {
+    "name": "random-led",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "dc287c1992f8163bff85ca1080a1dcaa5a0827d64b03d7bf30c9a6a393d63398"
+  },
+  {
+    "name": "sensor-dashboard",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "3214e41fd9d2d91333ff1ad512513ed874b651a19180b79156cb0648031a20b9"
+  },
+  {
+    "name": "servo",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "56333ba831e2344947cf7f6d79cd244ea04b5e33ed6487a107e783781ce538a0"
+  },
+  {
+    "name": "shift-register",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "03f48a8619f759d8dbb4a0289b00b44c7da0a81ab95b6472763884a6905deb33"
+  },
+  {
+    "name": "sleep-wakeup",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "020204313e3453ba2749272d7df6ec3b1056ea404365febea74978a7a321ee84"
+  },
+  {
+    "name": "smoothing",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "4a552284e4feb875b9bbc3a132949a7212b69e3ac5cae061e5c98cac85595c9e"
+  },
+  {
+    "name": "soft-pwm",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "be1affe3edc3132a571654fe2e1975bace6f223e448e3463b09935005965b61d"
+  },
+  {
+    "name": "softspi",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "9705788a562f3b296bb133f7787038d093e6bb60446a3a79a16491205f97cc9e"
+  },
+  {
+    "name": "softspi-peripheral",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "14682df54a3175360c9338706deb797d079265122fab60e2da6cd284fba74d8f"
+  },
+  {
+    "name": "spi-cs",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "33aca184013fc51fe0c9d11a45f137ca0f7b47b34375b953dcc7c2c915c6c9c9"
+  },
+  {
+    "name": "spi-irq",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "b212d9ec80c42bd21b898069641242802f9baf7c7fe76c81d69251b12a8fc871"
+  },
+  {
+    "name": "spi-shift-register",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "5b001f8aa1f5046b6853be77d4c858d6bc21c101a5f6407fd4d584b3ba413473"
+  },
+  {
+    "name": "ssd1306",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "1aba2105f733539598c73ddaaab28e38b6cfa3b5b5ae8b567f861a9638af465e"
+  },
+  {
+    "name": "state-machine",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "5e45ac940721d6e6aa8f7ce8346c0a4ed4fed4604f47883101ba96b062e973b9"
+  },
+  {
+    "name": "stopwatch",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "d13bcc9072e4a7559e7863f508386f0b0416519e4b3f4aea3b64b72b8aba9e9d"
+  },
+  {
+    "name": "t-flag-demo",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "c927829c16deaf24f1af4d3f80f37bafdfb463590095d64daadd4d1f7140a5fc"
+  },
+  {
+    "name": "timer-ctc",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "38ed38029fe56dd634c88e23c018925ba33acd55ed21b05b2fd52d4293ad5370"
+  },
+  {
+    "name": "timer-interrupt",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "4772ca2beca9b565a7ba103741f9ccbc7e201be771ae687f25b9e43f0b46a75b"
+  },
+  {
+    "name": "timer-poll",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "11d56e14a73f2a0b71ccf4cf8585eedcdfbb68f870f22d01589f7cea9e77be52"
+  },
+  {
+    "name": "tone-buzzer",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "2dd40af901728344ccf62d00e64b7d14a455b5bb8d0b02d5c78cf830017927df"
+  },
+  {
+    "name": "uart-command",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "8d18f16138b5bbea604ab7db6ba8461469e06ceca2856ad4276fa3145caf7b21"
+  },
+  {
+    "name": "uart-echo",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "b7a8012b036c4dbce6b82e379389fe98faae214bdbe38f2c192fc471536b6775"
+  },
+  {
+    "name": "uart-echo-cp",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "fe5e14c534662fb73b163ac7351163a7008f8c2a9da8096c69a645b6094a9e61"
+  },
+  {
+    "name": "uart-echo-mp",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "713c3527c85ef5dfe77d6cf07c4061f59f3e5a38ff2a487bde66d6c36bdeafba"
+  },
+  {
+    "name": "uart-rx-interrupt",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "78c146d8f5738c28dc36ffb6a2dce8b8b3e717a08a80de860098eef6f5a2d78f"
+  },
+  {
+    "name": "uart-str",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "93ec7f6a0eac759a7612813b9dd5920a7fdcde058a95714e95148dc65ec7dad8"
+  },
+  {
+    "name": "watchdog",
+    "chip": "atmega328p",
+    "emulation": "avr5",
+    "sha256": "a36941f79c598a229e9f05150f46d7f12ff4c88718b6967fa091db1b3559c732"
+  }
+]

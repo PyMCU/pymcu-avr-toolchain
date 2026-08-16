@@ -1,0 +1,173 @@
+name: Build native macOS arm64 toolchain
+
+# Compiles avr-binutils, avr-gcc and avr-libc from source on an Apple Silicon
+# runner and packages them with the same layout the PlatformIO repackaging uses.
+#
+# WHY THIS EXISTS
+# The wheels shipped today repackage PlatformIO's prebuilt toolchain, and its
+# macOS build is x86_64 only. On Apple Silicon that runs through Rosetta 2 —
+# which macOS does not install until something asks for it, so on a Mac that has
+# never run an Intel binary `pymcu build` dies with "bad CPU type in executable".
+# Found on a brand-new MacBook. A native arm64 build removes the dependency.
+#
+# NOT WIRED INTO ANYTHING YET: manual dispatch only. Read the note about
+# versions in the summary step before making this the published wheel.
+
+on:
+  workflow_dispatch:
+    inputs:
+      binutils_version:
+        description: binutils version
+        default: "2.42"
+      gcc_version:
+        description: GCC version
+        default: "14.2.0"
+      avrlibc_version:
+        description: avr-libc version
+        default: "2.2.0"
+
+jobs:
+  build:
+    name: avr-gcc ${{ inputs.gcc_version }} for macOS arm64
+    runs-on: macos-14          # Apple Silicon
+    timeout-minutes: 180
+
+    env:
+      PREFIX: ${{ github.workspace }}/toolchain-staged
+      MAKEFLAGS: -j4
+      # Release: autotools usa "-g -O2" por defecto y esos simbolos eran la mitad
+      # del arbol (573 MB -> 310 MB con esto y con las variantes de double fijadas).
+      CFLAGS: "-O2"
+      CXXFLAGS: "-O2"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Deliberadamente NO se instala nada con Homebrew. binutils enlaza zstd
+      # si lo encuentra instalado, y eso incrusta una ruta absoluta a
+      # /opt/homebrew en el binario: el toolchain deja de funcionar en cuanto se
+      # mueve, que es exactamente lo que rechaza la comprobacion del driver.
+      # Verificado compilando en local: los runners de macOS traen Homebrew con
+      # zstd, asi que sin --without-zstd el wheel sale roto y el smoke test del
+      # propio runner no lo detecta. texinfo tampoco hace falta: MAKEINFO=true.
+
+      - name: Fetch sources
+        run: |
+          set -euo pipefail
+          mkdir -p src && cd src
+          curl -fLO "https://ftp.gnu.org/gnu/binutils/binutils-${{ inputs.binutils_version }}.tar.xz"
+          curl -fLO "https://ftp.gnu.org/gnu/gcc/gcc-${{ inputs.gcc_version }}/gcc-${{ inputs.gcc_version }}.tar.xz"
+          # Las expresiones de GitHub no hacen expansion de shell: el nombre de
+          # la etiqueta (2_2_0) se calcula aqui, no en ${{ }}.
+          AVRLIBC="${{ inputs.avrlibc_version }}"
+          TAG="${AVRLIBC//./_}"
+          curl -fLO "https://github.com/avrdudes/avr-libc/releases/download/avr-libc-${TAG}-release/avr-libc-${AVRLIBC}.tar.bz2" \
+            || curl -fLO "https://download.savannah.gnu.org/releases/avr-libc/avr-libc-${AVRLIBC}.tar.bz2"
+          for f in *.tar.*; do tar xf "$f"; done
+          ls -1d */
+
+      - name: Build binutils
+        run: |
+          set -euo pipefail
+          mkdir -p build/binutils && cd build/binutils
+          ../../src/binutils-${{ inputs.binutils_version }}/configure \
+            --target=avr --prefix="$PREFIX" \
+            --disable-nls --disable-werror --disable-shared --enable-static \
+            --with-system-zlib --without-zstd MAKEINFO=true
+          # MAKEINFO tambien en el make: binutils vuelve a invocar makeinfo al
+          # construir la documentacion y muere con Error 127 si no esta.
+          make MAKEINFO=true
+          make install MAKEINFO=true
+
+      - name: Build gcc
+        run: |
+          set -euo pipefail
+          # download_prerequisites builds gmp/mpfr/mpc in-tree and links them
+          # statically: that is what makes the result relocatable.
+          (cd src/gcc-${{ inputs.gcc_version }} && ./contrib/download_prerequisites)
+          export PATH="$PREFIX/bin:$PATH"
+          mkdir -p build/gcc && cd build/gcc
+          ../../src/gcc-${{ inputs.gcc_version }}/configure \
+            --target=avr --prefix="$PREFIX" \
+            --enable-languages=c,c++ \
+            --disable-nls --disable-libssp --disable-libada --disable-shared \
+            --with-dwarf2 --with-system-zlib \
+            --enable-checking=release \
+            --with-double=32 --with-long-double=32 \
+            MAKEINFO=missing
+          make
+          make install
+
+      - name: Build avr-libc
+        run: |
+          set -euo pipefail
+          export PATH="$PREFIX/bin:$PATH"
+          avr-gcc --version
+          mkdir -p build/avr-libc && cd build/avr-libc
+          ../../src/avr-libc-${{ inputs.avrlibc_version }}/configure \
+            --prefix="$PREFIX" --host=avr --build=aarch64-apple-darwin
+          make
+          make install
+
+      - name: Trim what PyMCU never uses
+        run: |
+          set -euo pipefail
+          rm -rf "$PREFIX/share/man" "$PREFIX/share/info" "$PREFIX/share/doc" \
+                 "$PREFIX/share/locale" "$PREFIX/lib/gcc/avr/${{ inputs.gcc_version }}/plugin" || true
+          du -sh "$PREFIX"
+
+      - name: Verify the result is native, self-contained and functional
+        run: |
+          set -euo pipefail
+          cd "$PREFIX"
+          for bin in avr-gcc avr-as avr-objcopy; do
+            test -f "bin/$bin" || { echo "missing bin/$bin"; exit 1; }
+            file "bin/$bin"
+            # The whole point: arm64, not x86_64.
+            file "bin/$bin" | grep -q "arm64" || { echo "ERROR: $bin is not arm64"; exit 1; }
+            # And nothing from Homebrew: those paths are hardcoded and break
+            # the moment the toolchain is installed somewhere else.
+            if otool -L "bin/$bin" | grep -q "/opt/homebrew"; then
+              echo "ERROR: $bin links against Homebrew"; otool -L "bin/$bin"; exit 1
+            fi
+          done
+          test -f avr/lib/libm.a && echo "libm.a OK"
+          # Exactly the check the PyMCU driver runs before trusting a toolchain.
+          ./bin/avr-gcc -mmcu=atmega328p --print-libgcc-file-name
+
+      - name: Build wheel
+        env:
+          AVRT_TOOLCHAIN_DIR: ${{ github.workspace }}/toolchain-staged
+          WHEEL_PLATFORM_TAG: macosx_14_0_arm64
+          AVRT_GCC_VERSION: ${{ inputs.gcc_version }}
+        run: |
+          pipx install uv || pip install uv
+          uv build --wheel python/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-macos-arm64-native
+          path: python/dist/*.whl
+
+      - name: Summary
+        run: |
+          {
+            echo "## Native macOS arm64 toolchain"
+            echo
+            echo "- binutils \`${{ inputs.binutils_version }}\`"
+            echo "- gcc \`${{ inputs.gcc_version }}\`"
+            echo "- avr-libc \`${{ inputs.avrlibc_version }}\`"
+            echo
+            echo "### Before publishing this, read"
+            echo
+            echo "The wheels for every other platform repackage PlatformIO's"
+            echo "**avr-gcc 7.3.0**. This one is a different compiler, so its libgcc"
+            echo "and avr-libc startup code differ — and that code is counted in the"
+            echo "flash figures PyMCU reports and the docs quote. Shipping this for"
+            echo "macOS arm64 alone would make that platform report different byte"
+            echo "counts from Linux and Windows for the same program."
+            echo
+            echo "Either match the versions across platforms, or move every"
+            echo "platform to a native build at the same time, and re-measure the"
+            echo "published figures afterwards."
+          } >> "$GITHUB_STEP_SUMMARY"

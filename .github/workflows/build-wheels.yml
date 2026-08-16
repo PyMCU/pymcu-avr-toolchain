@@ -1,84 +1,78 @@
 name: Build pymcu-avr-toolchain wheels
 
-# Downloads the PlatformIO toolchain-atmelavr tarball for each platform and
-# repackages it as a platform-specific Python wheel.  No compilation required.
-
 on:
   push:
     tags: ['v*']
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      binutils_version:
+        description: binutils version
+        default: "2.42"
+      gcc_version:
+        description: GCC version
+        default: "14.2.0"
+      avrlibc_version:
+        description: avr-libc version
+        default: "2.2.0"
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  PIO_VERSION: "3.70300.220127"
-  PIO_BASE: "https://dl.registry.platformio.org/download/platformio/tool/toolchain-atmelavr/3.70300.220127"
-  GCC_VERSION: "7.3.0"
+  BINUTILS_VERSION: ${{ inputs.binutils_version || '2.42' }}
+  GCC_VERSION: ${{ inputs.gcc_version || '14.2.0' }}
+  AVRLIBC_VERSION: ${{ inputs.avrlibc_version || '2.2.0' }}
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # All wheels are built on ubuntu-latest — we only download + repackage
-  # pre-built binaries, so no native runner is needed per target platform.
-  # ---------------------------------------------------------------------------
-  build-wheels:
-    name: Build ${{ matrix.name }} wheel
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+  build-native:
+    name: Build ${{ matrix.name }} (native)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 240
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: linux-x64
-            pio_tarball: toolchain-atmelavr-linux_x86_64-3.70300.220127.tar.gz
+            os: ubuntu-latest
+            script: scripts/build-avr-linux.sh
             wheel_tag: manylinux_2_17_x86_64
           - name: linux-arm64
-            pio_tarball: toolchain-atmelavr-linux_aarch64-3.70300.220127.tar.gz
+            os: ubuntu-24.04-arm
+            script: scripts/build-avr-linux.sh
             wheel_tag: manylinux_2_17_aarch64
           - name: macos-arm64
-            # macOS arm64 uses the x86_64 tarball — runs via Rosetta 2 on
-            # Apple Silicon (same approach used by PlatformIO itself).
-            pio_tarball: toolchain-atmelavr-darwin_x86_64-3.70300.220127.tar.gz
+            os: macos-latest
+            script: scripts/build-avr-macos-arm64.sh
             wheel_tag: macosx_14_0_arm64
-          - name: windows-x64
-            pio_tarball: toolchain-atmelavr-windows-3.70300.220127.tar.gz
-            wheel_tag: win_amd64
-          - name: windows-arm64
-            # Windows on Arm: same x64 binaries, wheel tagged win_arm64.
-            # WoA x64 emulation is built into Windows 11 on Arm.
-            pio_tarball: toolchain-atmelavr-windows-3.70300.220127.tar.gz
-            wheel_tag: win_arm64
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download PlatformIO toolchain tarball
-        run: |
-          URL="${{ env.PIO_BASE }}/${{ matrix.pio_tarball }}"
-          echo "Downloading: $URL"
-          curl -fL "$URL" -o toolchain.tar.gz
-          mkdir -p toolchain-staged
-          tar xzf toolchain.tar.gz -C toolchain-staged
-          echo "Toolchain layout:"
-          ls -1 toolchain-staged/
+      - name: Cache built toolchain
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/avrtc/toolchain-staged
+          key: avrtc-${{ matrix.name }}-${{ env.BINUTILS_VERSION }}-${{ env.GCC_VERSION }}-${{ env.AVRLIBC_VERSION }}-${{ hashFiles(matrix.script) }}
 
-      - name: Verify required binaries
+      - name: Build toolchain from source
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: bash ${{ matrix.script }}
+
+      - name: Verify the staged toolchain
         run: |
-          EXE=""
-          if [[ "${{ matrix.wheel_tag }}" == win* ]]; then EXE=".exe"; fi
-          for bin in avr-gcc avr-as avr-objcopy; do
-            test -f "toolchain-staged/bin/${bin}${EXE}" || \
-              { echo "ERROR: missing toolchain-staged/bin/${bin}${EXE}"; exit 1; }
+          set -euo pipefail
+          cd /tmp/avrtc/toolchain-staged
+          for b in avr-gcc avr-as avr-objcopy; do
+            test -x "bin/$b" || { echo "falta bin/$b"; exit 1; }
+            file "bin/$b"
           done
-          # Verify avr-libc is present
-          test -f toolchain-staged/avr/lib/libm.a && echo "libm.a OK" || \
-            echo "WARNING: libm.a not found"
-          echo "All required binaries present."
+          ./bin/avr-gcc -mmcu=atmega328p --print-libgcc-file-name
+          du -sh .
 
       - uses: astral-sh/setup-uv@v6
 
       - name: Build wheel
         env:
-          AVRT_TOOLCHAIN_DIR: ${{ github.workspace }}/toolchain-staged
+          AVRT_TOOLCHAIN_DIR: /tmp/avrtc/toolchain-staged
           WHEEL_PLATFORM_TAG: ${{ matrix.wheel_tag }}
           AVRT_GCC_VERSION: ${{ env.GCC_VERSION }}
         run: uv build --wheel python/
@@ -88,13 +82,54 @@ jobs:
           name: wheel-${{ matrix.name }}
           path: python/dist/*.whl
 
-  # ---------------------------------------------------------------------------
-  # Smoke test: install each wheel and verify the toolchain is functional.
-  # ---------------------------------------------------------------------------
+  build-windows-platformio:
+    name: Build ${{ matrix.name }} (PlatformIO, provisional)
+    runs-on: ubuntu-latest
+    env:
+      PIO_BASE: "https://dl.registry.platformio.org/download/platformio/tool/toolchain-atmelavr/3.70300.220127"
+      PIO_TARBALL: "toolchain-atmelavr-windows-3.70300.220127.tar.gz"
+      PIO_GCC_VERSION: "7.3.0"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            wheel_tag: win_amd64
+          - name: windows-arm64
+            wheel_tag: win_arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download and stage PlatformIO toolchain
+        run: |
+          set -euo pipefail
+          curl -fL "$PIO_BASE/$PIO_TARBALL" -o toolchain.tar.gz
+          mkdir -p /tmp/avrtc/toolchain-staged
+          tar xzf toolchain.tar.gz -C /tmp/avrtc/toolchain-staged
+          for bin in avr-gcc avr-as avr-objcopy; do
+            test -f "/tmp/avrtc/toolchain-staged/bin/${bin}.exe" || \
+              { echo "ERROR: falta bin/${bin}.exe"; exit 1; }
+          done
+          test -f /tmp/avrtc/toolchain-staged/avr/lib/libm.a && echo "libm.a OK"
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Build wheel
+        env:
+          AVRT_TOOLCHAIN_DIR: /tmp/avrtc/toolchain-staged
+          WHEEL_PLATFORM_TAG: ${{ matrix.wheel_tag }}
+          AVRT_GCC_VERSION: ${{ env.PIO_GCC_VERSION }}
+        run: uv build --wheel python/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.name }}
+          path: python/dist/*.whl
+
   smoke-test:
     name: Smoke test ${{ matrix.name }}
-    needs: build-wheels
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-native, build-windows-platformio]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -116,49 +151,96 @@ jobs:
         with:
           name: wheel-${{ matrix.name }}
           path: dist/
-      - uses: astral-sh/setup-uv@v6
-      - name: Install wheel and verify
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install wheel
+        run: pip install --no-index --find-links dist/ pymcu-avr-toolchain
+
+      - name: Compile a real program
+        shell: bash
         run: |
-          pip install --no-index --find-links dist/ pymcu-avr-toolchain
-          python -c "
-          from pymcu_avr_toolchain import get_tool, toolchain_version
-          gcc = get_tool('avr-gcc')
-          print('avr-gcc:', gcc)
-          print('version:', toolchain_version())
+          set -euo pipefail
+          cat > blink.c <<'EOF'
+          #include <avr/io.h>
+          #include <util/delay.h>
+          int main(void) {
+            DDRB |= (1 << PB5);
+            for (;;) { PORTB ^= (1 << PB5); _delay_ms(500); }
+          }
+          EOF
+          python - <<'EOF'
           import subprocess, sys
-          r = subprocess.run([str(gcc), '--version'], capture_output=True, text=True)
-          print(r.stdout.strip())
-          assert '7.3.0' in r.stdout or '7.3.0' in r.stderr, 'unexpected version'
-          print('Smoke test PASSED')
-          "
+          from pymcu_avr_toolchain import get_tool, toolchain_version
+          gcc = str(get_tool("avr-gcc"))
+          objcopy = str(get_tool("avr-objcopy"))
+          print("avr-gcc:", gcc)
+          print("version:", toolchain_version())
+          subprocess.run([gcc, "-mmcu=atmega328p", "-Os", "-DF_CPU=16000000UL",
+                          "-o", "blink.elf", "blink.c"], check=True)
+          subprocess.run([objcopy, "-O", "ihex", "blink.elf", "blink.hex"], check=True)
+          size = sum(1 for _ in open("blink.hex"))
+          print(f"hex generado: {size} lineas")
+          if size < 2:
+              sys.exit("el hex sale vacio")
+          print("Smoke test PASSED")
+          EOF
 
-  # ---------------------------------------------------------------------------
-  # Publish to PyPI via OIDC trusted publishing.
-  # ---------------------------------------------------------------------------
-  publish-pypi:
-    name: Publish to PyPI
-    needs: [build-wheels, smoke-test]
-    if: startsWith(github.ref, 'refs/tags/v')
+  check-consistency:
+    name: All wheels ship the same avr-gcc
+    needs: [build-native, build-windows-platformio]
     runs-on: ubuntu-latest
-    environment: release
-    permissions:
-      id-token: write
-
     steps:
       - uses: actions/download-artifact@v4
         with:
           pattern: wheel-*
           merge-multiple: true
           path: dist/
-      - name: List wheels
-        run: ls -lh dist/
+      - name: Compare embedded gcc versions
+        env:
+          EXPECTED: ${{ env.GCC_VERSION }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, sys, zipfile, pathlib
+          expected = os.environ["EXPECTED"]
+          seen, bad = {}, False
+          for whl in sorted(pathlib.Path("dist").glob("*.whl")):
+              with zipfile.ZipFile(whl) as z:
+                  name = next(n for n in z.namelist() if n.endswith("_manifest.json"))
+                  got = json.loads(z.read(name))["gcc_version"]
+              seen[whl.name] = got
+              print(f"{got:>10}  {whl.name}")
+              if got != expected:
+                  bad = True
+          if bad:
+              print(f"\nERROR: se esperaba avr-gcc {expected} en todos los wheels.")
+              print("Publicar asi entregaria compiladores distintos segun la")
+              print("plataforma bajo un unico numero de version del paquete.")
+              sys.exit(1)
+          print(f"\nTodos los wheels llevan avr-gcc {expected}.")
+          EOF
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [smoke-test, check-consistency]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*
+          merge-multiple: true
+          path: dist/
+      - run: ls -lh dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
 
-  # ---------------------------------------------------------------------------
-  # Create GitHub Release with all wheels attached.
-  # ---------------------------------------------------------------------------
   github-release:
     name: Create GitHub Release
     needs: publish-pypi
@@ -166,7 +248,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -174,16 +255,19 @@ jobs:
           pattern: wheel-*
           merge-multiple: true
           path: dist/
-      - name: Create release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           files: dist/*.whl
           prerelease: ${{ contains(github.ref, 'a') || contains(github.ref, 'b') || contains(github.ref, 'rc') }}
           generate_release_notes: true
           body: |
-            Pre-built AVR-GCC **7.3.0** toolchain wheels for PyMCU.
+            AVR toolchain wheels for PyMCU, **compiled from source** for each platform.
 
-            Sourced from [PlatformIO toolchain-atmelavr](https://registry.platformio.org/packages/platformio/tool/toolchain-atmelavr) v3.70300.220127.
-            Includes: avr-gcc, avr-g++, avr-as, avr-ld, avr-objcopy, avr-gdb, avr-libc.
+            - binutils `${{ env.BINUTILS_VERSION }}`
+            - avr-gcc `${{ env.GCC_VERSION }}`
+            - avr-libc `${{ env.AVRLIBC_VERSION }}`
 
-            Visit [docs.pymcu.org](https://docs.pymcu.org) for installation instructions.
+            Native builds: no Rosetta 2 on Apple Silicon, and no dependency on a
+            third-party CDN.
+
+            See [docs.pymcu.org](https://docs.pymcu.org) for installation.

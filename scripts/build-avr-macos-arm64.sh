@@ -1,15 +1,12 @@
 #!/usr/bin/env bash
-# Compila el toolchain AVR nativo para macOS arm64, igual que el workflow.
 set -euo pipefail
-BINUTILS=2.42
-GCC=14.2.0
-AVRLIBC=2.2.0
+BINUTILS=${BINUTILS_VERSION:-2.42}
+GCC=${GCC_VERSION:-14.2.0}
+AVRLIBC=${AVRLIBC_VERSION:-2.2.0}
 
-ROOT=/tmp/avrtc
+ROOT="${AVR_BUILD_ROOT:-/tmp/avrtc}"
 PREFIX=$ROOT/toolchain-staged
 export MAKEFLAGS="-j$(sysctl -n hw.ncpu)"
-# Release: -O2 sin -g (por defecto autotools usa "-g -O2" y eso es la mayor
-# parte de los 573 MB del arbol) y sin las comprobaciones internas de gcc.
 export CFLAGS="-O2"
 export CXXFLAGS="-O2"
 
@@ -40,10 +37,6 @@ echo "=== [3/6] prerrequisitos de gcc (gmp/mpfr/mpc en el arbol, estaticos)"
 cd "$ROOT/src/gcc-$GCC" && [ -d gmp ] || ./contrib/download_prerequisites
 
 echo "=== [4/6] gcc"
-# libgcc de AVR tiene una carrera conocida con make -j: ar empaqueta antes de que
-# esten compilados todos los objetos de coma fija y falla con
-# "_fractSFSQ.o: No such file or directory". Un segundo make en serie completa
-# solo lo que falte; no rehace lo ya construido.
 export PATH="$PREFIX/bin:$PATH"
 mkdir -p "$ROOT/build/gcc" && cd "$ROOT/build/gcc"
 if [ ! -f .done ]; then
@@ -69,12 +62,20 @@ if [ ! -f .done ]; then
 fi
 
 echo "=== [5.5/6] recorte"
-# Documentacion, manuales, locales y cabeceras de plugins: nada de esto lo usa
-# PyMCU, que solo ensambla, enlaza y convierte a hex.
 rm -rf "$PREFIX/share/man" "$PREFIX/share/info" "$PREFIX/share/doc" \
-       "$PREFIX/share/locale" "$PREFIX/lib/gcc/avr/14.2.0/plugin" 2>/dev/null || true
-# Quitar simbolos: con -O2 sin -g la ganancia es modesta (~1 MB comprimido),
-# pero es gratis.
+       "$PREFIX/share/locale" "$PREFIX/lib/gcc/avr/$GCC/plugin" 2>/dev/null || true
+
+KEEP_MULTILIBS="avr25 avr4 avr5 avr6"
+for d in "$PREFIX/lib/gcc/avr/$GCC"/*/ "$PREFIX/avr/lib"/*/; do
+  [ -d "$d" ] || continue
+  n=$(basename "$d")
+  case "$n" in
+    include|include-fixed|install-tools|device-specs|plugin|ldscripts) continue ;;
+  esac
+  case " $KEEP_MULTILIBS " in *" $n "*) continue ;; esac
+  rm -rf "$d"
+done
+
 find "$PREFIX/bin" "$PREFIX/libexec" -type f 2>/dev/null | while read -r f; do
   file "$f" | grep -q "Mach-O" && strip -S "$f" 2>/dev/null || true
 done
@@ -89,8 +90,6 @@ for b in avr-gcc avr-as avr-objcopy; do
 done
 test -f avr/lib/libm.a && echo "libm.a OK"
 ./bin/avr-gcc -mmcu=atmega328p --print-libgcc-file-name
-# OJO al empaquetar: usar tar (o cp -a). Algunos ejecutables son el MISMO
-# fichero enlazado duro (avr-gcc y avr-gcc-14.2.0), y un cp -R los duplica.
-tar cJf "$ROOT/avr-toolchain-macos-arm64.tar.xz" -C "$(dirname "$PREFIX")" "$(basename "$PREFIX")"
+COPYFILE_DISABLE=1 tar cJf "$ROOT/avr-toolchain-macos-arm64.tar.xz" -C "$(dirname "$PREFIX")" "$(basename "$PREFIX")"
 echo "=== TOOLCHAIN NATIVO ARM64 CONSTRUIDO EN $PREFIX"
 echo "    paquete: $ROOT/avr-toolchain-macos-arm64.tar.xz ($(du -h "$ROOT/avr-toolchain-macos-arm64.tar.xz" | awk '{print $1}'))"

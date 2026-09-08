@@ -133,19 +133,49 @@ python -m pymcu_avr_toolchain
 
 ### Release process
 
+> [!IMPORTANT]
+> **The local branch is `master`; the remote branch is `main`.** Push with
+> `git push <remote> master:main`. A plain `git push <remote> main` fails with
+> `src refspec main does not match any`, and the danger is what comes next: if
+> you chain a `workflow_dispatch` after it with `;` instead of `&&`, the dispatch
+> runs anyway and builds the commit you did NOT push. The run looks healthy and
+> tests the wrong tree. The same mismatch makes `git log origin/main..main` print
+> nothing and report zero unpushed commits when there are many, because the
+> command errors and the error is easy to discard. Both of those have happened.
+>
+> Also check which remote you are pushing to: `origin` is the archived
+> `avr-gcc-build`. The live repo is `PyMCU/pymcu-avr-toolchain`.
+
 1. Update `VER_GCC`, `VER_BINUTILS`, `VER_GDB` in `avr-gcc-build.sh`
    and `version` in `python/pyproject.toml`.
-2. Tag and push:
+2. Dry run first, on `main`, with no tag:
+   ```bash
+   git push live master:main
+   gh workflow run build-wheels.yml --repo PyMCU/pymcu-avr-toolchain \
+       --ref main -f cache_bust="$(date +%s)"
+   ```
+   `publish-pypi` is gated on `startsWith(github.ref, 'refs/tags/v')`, so a
+   dispatch cannot publish. Bust the cache: the Windows job caches `C:\a`, and a
+   half-built tree from a failed run otherwise survives into the next attempt.
+3. Only once all four builds are green, tag and push:
    ```bash
    git tag v15.2.0
-   git push origin v15.2.0
+   git push live v15.2.0
    ```
-3. The `build-wheels.yml` workflow fires automatically:
+4. The `build-wheels.yml` workflow then:
    - Builds one binary wheel per platform (Linux x64 from source ~2 h,
-     Linux arm64 best-effort, macOS via Homebrew, Windows via MSYS2).
-   - Binary wheels → **GitHub Releases** (too large for PyPI's 100 MB limit).
-   - PyPI receives only the **pure-Python sdist stub**.
-   - `publish-pypi` uses OIDC trusted publishing (no stored token required).
+     Linux arm64, macOS arm64, Windows via MSYS2). The Windows job emits **two**
+     wheels, `win_amd64` and `win_arm64`, so four jobs produce five wheels.
+   - Publishes the **binary wheels to PyPI** via `pypa/gh-action-pypi-publish`,
+     using OIDC trusted publishing (no stored token), and attaches the same
+     wheels to a GitHub Release.
+   - There is **no sdist**. That matters: if one platform's wheel is missing from
+     a release, pip does not fail for that platform's users. It walks back to the
+     newest version that does have a compatible wheel and installs it silently,
+     so those users keep the previous toolchain with nothing naming it. Never
+     publish a partial matrix. `check-consistency` will not catch this, because it
+     compares wheels within one release; what stops it is that `publish-pypi`
+     needs `smoke-test` and `check-consistency`, and both need every build job.
 
 ### Required GitHub configuration
 

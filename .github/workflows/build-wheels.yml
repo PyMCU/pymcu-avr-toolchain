@@ -99,7 +99,6 @@ jobs:
       - uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          update: true
           install: >-
             base-devel
             mingw-w64-x86_64-gcc
@@ -212,6 +211,16 @@ jobs:
 
   check-consistency:
     name: All wheels ship the same avr-gcc
+    # Guards ONE release: every wheel in this build carries the same avr-gcc.
+    # It is structurally blind to the failure across releases. There is no sdist,
+    # so if a platform's wheel is missing here, pip does not fail for that user --
+    # it walks back to the newest version that does have one and installs it
+    # silently. A Windows user would land on 1!7.3.0.post3 and keep the avr-libc
+    # 7.3.0 that cannot link float // or %, with nothing naming it. Measured on
+    # pymcu-arm, whose macOS 15 resolution falls back from a5 to a1.post1 in
+    # exactly this way. So a partial matrix must never publish, and this gate is
+    # not what stops it: publish-pypi needs smoke-test and check-consistency,
+    # and both of those need BOTH build jobs, so one dead build skips the chain.
     needs: [build-native, build-native-windows]
     runs-on: ubuntu-latest
     steps:

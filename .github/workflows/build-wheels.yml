@@ -17,6 +17,9 @@ on:
       cache_bust:
         description: change this to force a clean rebuild
         default: "0"
+      build_timeout:
+        description: minutes before the Windows build step gives up (it saves its cache either way)
+        default: "100"
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -114,15 +117,39 @@ jobs:
             file
             patch
 
-      - name: Cache build tree
+      # restore/save rather than actions/cache, and the save runs even when the
+      # build step does not succeed. actions/cache only writes in a post-job step
+      # that is skipped on failure or cancellation, and every Windows run so far
+      # has failed or been cancelled -- so this job has NEVER written a cache.
+      # `gh cache list` shows avrtc-linux-x64, avrtc-linux-arm64 and
+      # avrtc-macos-arm64, and zero avrtc-windows. Each attempt therefore rebuilt
+      # binutils and gcc from scratch, about 58 minutes, before reaching the new
+      # failure, which is why every iteration has cost more than the last.
+      #
+      # Saving a partial tree is safe here: each stage in the script writes a
+      # .done marker and wipes its own build directory when that marker is
+      # absent, so a restored tree resumes at the first stage that did not
+      # finish. That is what 3397f69 was for.
+      - name: Restore build tree
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: C:\a
           key: avrtc-windows-${{ env.BINUTILS_VERSION }}-${{ env.GCC_VERSION }}-${{ env.AVRLIBC_VERSION }}-${{ inputs.cache_bust || '0' }}
 
+      # A step-level timeout so an overrun FAILS this step and lets the job carry
+      # on to the save below. A job-level timeout cancels instead, and a cancelled
+      # job skips the save, which is the loop that has kept this cache empty.
       - name: Build toolchain from source
+        timeout-minutes: ${{ fromJSON(inputs.build_timeout || '100') }}
         run: bash scripts/build-avr-windows.sh
+
+      - name: Save build tree
+        if: always() && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: C:\a
+          key: avrtc-windows-${{ env.BINUTILS_VERSION }}-${{ env.GCC_VERSION }}-${{ env.AVRLIBC_VERSION }}-${{ inputs.cache_bust || '0' }}
 
       - uses: astral-sh/setup-uv@v6
         with: { enable-cache: false }

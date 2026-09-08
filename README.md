@@ -85,8 +85,10 @@ pip install https://github.com/PyMCU/avr-gcc-build/releases/download/v15.2.0.pos
 # macOS Apple Silicon
 pip install https://github.com/PyMCU/avr-gcc-build/releases/download/v15.2.0.post5/pymcu_avr_toolchain-15.2.0.post5-py3-none-macosx_14_0_arm64.whl
 
-# Windows x86-64
-pip install https://github.com/PyMCU/avr-gcc-build/releases/download/v15.2.0.post5/pymcu_avr_toolchain-15.2.0.post5-py3-none-win_amd64.whl
+# Any other host, Windows included: pymcu-avr-toolchain-wasi, one py3-none-any
+# wheel that runs the toolchain under WASM. This package ships native wheels
+# only for the three platforms above.
+pip install pymcu-avr-toolchain-wasi
 ```
 
 ### System toolchain (alternative)
@@ -155,17 +157,18 @@ python -m pymcu_avr_toolchain
        --ref main -f cache_bust="$(date +%s)"
    ```
    `publish-pypi` is gated on `startsWith(github.ref, 'refs/tags/v')`, so a
-   dispatch cannot publish. Bust the cache: the Windows job caches `C:\a`, and a
-   half-built tree from a failed run otherwise survives into the next attempt.
-3. Only once all four builds are green, tag and push:
+   dispatch cannot publish. Bust the cache when a previous attempt left a
+   half-built tree that would otherwise survive into the next one.
+3. Only once all three builds are green, tag and push:
    ```bash
    git tag v15.2.0
    git push live v15.2.0
    ```
 4. The `build-wheels.yml` workflow then:
-   - Builds one binary wheel per platform (Linux x64 from source ~2 h,
-     Linux arm64, macOS arm64, Windows via MSYS2). The Windows job emits **two**
-     wheels, `win_amd64` and `win_arm64`, so four jobs produce five wheels.
+   - Builds one binary wheel per platform: Linux x64, Linux arm64, macOS arm64.
+     Those three are the whole of this package's native support. Every other
+     host, Windows included, uses `pymcu-avr-toolchain-wasi`, a single
+     `py3-none-any` wheel that runs the toolchain under WASM.
    - Publishes the **binary wheels to PyPI** via `pypa/gh-action-pypi-publish`,
      using OIDC trusted publishing (no stored token), and attaches the same
      wheels to a GitHub Release.
@@ -197,7 +200,7 @@ uv build --wheel python/
 |---|---|
 | `AVRT_TOOLCHAIN_DIR` | Path to a staged AVR-GCC tree for `hatch_build.py` |
 | `AVRT_GCC_VERSION` | Inject GCC version string for cross-build CI steps |
-| `WHEEL_PLATFORM_TAG` | Override the wheel platform tag (e.g. `win_amd64`) |
+| `WHEEL_PLATFORM_TAG` | Override the wheel platform tag (e.g. `manylinux_2_17_x86_64`) |
 | `PYMCU_AVR_WHEEL_URL` | Override the binary wheel download URL (air-gapped installs) |
 | `PYMCU_TOOLS_DIR` | Override the `~/.pymcu/tools` cache root |
 | `PYMCU_TOOLCHAIN_NO_SEEDING` | Set to `1` to use the in-package `bin/` directly without seeding the cache |

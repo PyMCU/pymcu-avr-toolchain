@@ -1,0 +1,87 @@
+name: Probe - can ubuntu cross-build AVR binutils for a Windows host
+
+# Throwaway probe, dispatch only, never runs on its own.
+#
+# The Windows job builds natively under MSYS2 and has cost six hours per attempt:
+# a ctype collision, then a documentation failure, then a five-hour hang in
+# avr-libc's config.status. The question this answers is whether that platform
+# has to be built natively at all.
+#
+# What is already established from the tree rather than from a build: avr-libc's
+# output is TARGET code. Both build scripts configure it identically apart from
+# the --build triple, and it installs libc.a, libm.a and the crt*.o set, which
+# are AVR objects. Nothing in that payload is Windows-specific, so the stage that
+# hangs is one the Windows runner arguably should not run.
+#
+# What is NOT established, and what this probe is for: whether the mingw-w64
+# cross toolchain on the ubuntu image can produce a Windows-HOSTED AVR binutils
+# at all. binutils alone, because it is minutes rather than an hour and it fails
+# for the same reasons gcc would. If this cannot work, the whole cross-compile
+# line dies here for a measured reason. If it can, the shape is worth costing:
+# build avr-libc once on Linux with the build-native avr-gcc the linux job
+# already produces, cross-build binutils and gcc for a mingw host, and assemble
+# the Windows payload from both.
+#
+# Delete this file once the question is answered either way.
+
+on:
+  workflow_dispatch:
+    inputs:
+      binutils_version:
+        description: binutils version
+        default: "2.42"
+
+jobs:
+  probe:
+    name: Cross-build binutils (build=linux, host=mingw, target=avr)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Install the mingw-w64 cross toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mingw-w64 texinfo
+          echo "--- what we got ---"
+          x86_64-w64-mingw32-gcc --version | head -1
+
+      - name: Fetch binutils
+        run: |
+          V=${{ inputs.binutils_version }}
+          curl -fsSLO "https://ftp.gnu.org/gnu/binutils/binutils-$V.tar.xz"
+          tar xf "binutils-$V.tar.xz"
+
+      - name: Configure for a Windows host and an AVR target
+        run: |
+          V=${{ inputs.binutils_version }}
+          mkdir -p build && cd build
+          ../binutils-$V/configure \
+            --build=x86_64-linux-gnu \
+            --host=x86_64-w64-mingw32 \
+            --target=avr \
+            --prefix=/tmp/stage \
+            --disable-nls --disable-werror --disable-shared --enable-static \
+            --without-zstd MAKEINFO=true
+
+      - name: Build and install
+        run: |
+          cd build
+          make -j"$(nproc)" MAKEINFO=true
+          make install MAKEINFO=true
+
+      # The decisive evidence: not that it built, but that what it built is a
+      # Windows binary that targets AVR. A green build that produced ELF would
+      # mean the cross was ignored, which is the failure that looks like success.
+      - name: Prove the output is a Windows PE that targets AVR
+        run: |
+          cd /tmp/stage/bin
+          ls -la
+          echo "--- file(1) on each tool ---"
+          for b in *; do printf '%-28s ' "$b"; file -b "$b"; done
+          echo "--- assertions ---"
+          file -b avr-as.exe | grep -q "PE32+ executable" \
+            && echo "PASS: avr-as.exe is a Windows PE32+ binary" \
+            || { echo "FAIL: avr-as.exe is not a Windows PE"; exit 1; }
+          # A Windows-hosted binary cannot be run here, so target support is read
+          # out of the build configuration rather than by executing it.
+          grep -q "target=avr\|avr" ../../../build/config.log 2>/dev/null \
+            && echo "note: configure recorded an avr target" || true

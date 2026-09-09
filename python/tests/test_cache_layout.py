@@ -20,9 +20,20 @@ KEY = "1!7.3.0.post2"
 
 
 def _seed(dirpath: Path, version: str = KEY) -> Path:
-    """Write a cache that _cache_is_complete() accepts."""
+    """Write a cache that _cache_is_complete() accepts.
+
+    `lib/` is not decoration. _cache_is_complete() rejects a cache without it
+    whenever the INSTALLED wheel has one, which is the case for every
+    self-contained build -- and that check is the point: a cache missing lib/
+    beside a wheel that has it is a toolchain that cannot link. This helper
+    seeded only bin/ and the sentinel, so it wrote a cache the function accepts
+    against a wheel with no lib/ and rejects against one with it. Run from the
+    source tree it passed; run against a published self-contained wheel, as the
+    post-publish smoke job does, it failed on a fixture rather than on a defect.
+    """
     (dirpath / "bin").mkdir(parents=True, exist_ok=True)
     (dirpath / "bin" / "avr-gcc").write_text("binary")
+    (dirpath / "lib").mkdir(parents=True, exist_ok=True)
     (dirpath / ".seeded_from_wheel").write_text(version)
     return dirpath
 
